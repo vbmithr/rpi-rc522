@@ -35,6 +35,7 @@ int main(int argc, char *argv[]) {
 	//	char* argv[ARG_MAX];
 
 	if (HW_init()) return 1; // Если не удалось инициализировать RC522 выходим.
+	InitRc522();
 
 	for (;;) {
 		status= PcdRequest(PICC_REQIDL,buff);
@@ -163,7 +164,7 @@ uint8_t HW_init() {
 			perror("UID must be set!\n");
 			return 1;
 		}
-		uid=atoi(user);
+		uid=(int)strtol(user,NULL,10);
 		if (uid<2) {
 			fprintf(stderr,"Invalid UID: %s\n",user);
 			return 1;
@@ -176,7 +177,6 @@ uint8_t HW_init() {
 	bcm2835_spi_setClockDivider(BCM2835_SPI_CLOCK_DIVIDER_32); // The default
 	bcm2835_spi_chipSelect(BCM2835_SPI_CS0);                      // The default
 	bcm2835_spi_setChipSelectPolarity(BCM2835_SPI_CS0, LOW);      // the default
-	InitRc522();
 	return 0;
 }
 
