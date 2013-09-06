@@ -152,7 +152,7 @@ int main(int argc, char *argv[]) {
 
 uint8_t HW_init() {
 	char user[5];
-	int uid;
+	long int uid;
 
 	if (!bcm2835_init()) {
 		perror("Can't init bcm2835!\n");

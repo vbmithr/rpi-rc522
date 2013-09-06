@@ -23,8 +23,8 @@ int find_config_param(char * param_name, char * param_val, int val_len, int log)
 			param_found=1;
 			if (log) syslog(LOG_DAEMON|LOG_INFO,"Found %s",str);
 			pstr+=strlen(param_name);
-			while ((*pstr==' ')||(*pstr=='\t')) pstr++;
-			while ((pstr[strlen(pstr)-1]==' ')||(pstr[strlen(pstr)-1]=='\t')) pstr[strlen(pstr)-1]=0;
+			while (isspace(*pstr)) pstr++;
+			while (isspace(pstr[strlen(pstr)-1])) pstr[strlen(pstr)-1]=0;
 			strncpy(param_val,pstr,val_len);
 #if DEBUG==1
 			printf("Debug:%s\n",param_val);

@@ -17,6 +17,7 @@
 #include <syslog.h>
 #include <sys/wait.h>
 #include <signal.h>
+#include <ctype.h>
 
 
 extern char config_file[];
