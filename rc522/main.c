@@ -30,19 +30,40 @@ int main(int argc, char *argv[]) {
 	char *p;
 	char sn_str[23];
 	pid_t child;
+	int max_page=0;
+	uint8_t page_step=0;
+
+	FILE * fmem_str;
+	char save_mem=0;
+	char fmem_path[255];
 
 	//	char* argv[ARG_MAX];
 
 	if (HW_init()) return 1; // Если не удалось инициализировать RC522 выходим.
 	InitRc522();
 
+	if (find_config_param("NEW_TAG_PATH=",fmem_path,sizeof(fmem_path)-1,0)) {
+		save_mem=1;
+		if (fmem_path[strlen(fmem_path)-1]!='/') {
+			sprintf(&fmem_path[strlen(fmem_path)],"/");
+			if (strlen(fmem_path)>=240) {
+				perror("Too long path for memory dump files!");
+				return 1;
+			}
+		}
+#if DEBUG==1
+		printf("Debug Path: %s\n",fmem_path);
+#endif
+	}
+
 	for (;;) {
 		status= find_tag(&CType);
-		if (status==MI_NOTAGERR) {
+		if (status==TAG_NOTAG) {
 			usleep(200000);
 			continue;
-		}else if (status!=MI_OK) {continue;}
+		}else if (status!=TAG_OK) {continue;}
 
+		if (select_tag_sn(SN,&SN_len)!=TAG_OK) {continue;}
 
 		//		memset(SN,0,sizeof(SN));
 
@@ -91,29 +112,44 @@ int main(int argc, char *argv[]) {
 
 			syslog(LOG_DAEMON|LOG_INFO,"New tag: type=%04x SNlen=%d SN=%s\n",CType,SN_len,sn_str);
 
-			if (1==0) {
+			if (save_mem) {
 				switch (CType) {
 				case 0x4400:
-					for (i=0;i<0x0f;i+=4) {
-//						status=PcdRead(i,buff);
-						printf("%02x -> ",i);
-						if (status==MI_OK){
-//							for (tmp=0;tmp<16;tmp++) {printf("%02x",buff[tmp]);}
-						}else if (status==MI_ERRCRC) {
-							printf("CRC Error");
-						}else{
-							printf("Unknown error");
-						}
-						printf("\n");
-					}
+					max_page=0x0f;
+					page_step=4;
 					break;
 				case 0x0400:
+					PcdHalt();
+					continue;
+					max_page=0x3f;
+					page_step=1;
 					break;
 				default:
 					break;
 				}
-				printf("\n");
-				fflush(stdout);
+				p=str;
+				sprintf(p,"%s",fmem_path);
+				p+=strlen(p);
+				for (tmp=0;tmp<SN_len;tmp++) {
+					sprintf(p,"%02x",SN[tmp]);
+					p+=2;
+				}
+				sprintf(p,".txt");
+				if ((fmem_str=fopen(str,"r"))!=NULL) {
+					fclose(fmem_str);
+					PcdHalt();
+					continue;
+				}
+				if ((fmem_str=fopen(str,"w"))==NULL) {
+					syslog(LOG_DAEMON|LOG_ERR,"Cant open file for write: %s",str);
+					PcdHalt();
+					continue;
+				}
+				for (i=0;i<max_page;i+=page_step) {
+					read_tag_str(i,str);
+					fprintf(fmem_str,"%02x: %s\n",i,str);
+				}
+				fclose(fmem_str);
 			}
 		}
 		PcdHalt();

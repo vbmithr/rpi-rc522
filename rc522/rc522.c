@@ -8,9 +8,7 @@
 void InitRc522(void)
 {
 	PcdReset();
-	//	  PcdAntennaOff();
 	PcdAntennaOn();
-	//	  M500PcdConfigISOType( 'A' );
 }
 
 char PcdRequest(uint8_t req_code,uint8_t *pTagType)
@@ -19,20 +17,17 @@ char PcdRequest(uint8_t req_code,uint8_t *pTagType)
 	uint8_t   unLen;
 	uint8_t   ucComMF522Buf[MAXRLEN];
 
-	//	ClearBitMask(Status2Reg,0x08);
 	WriteRawRC(BitFramingReg,0x07);
-	//	SetBitMask(TxControlReg,0x03);
-
 	ucComMF522Buf[0] = req_code;
 
 	status = PcdComMF522(PCD_TRANSCEIVE,ucComMF522Buf,1,ucComMF522Buf,&unLen);
-	if ((status == MI_OK) && (unLen == 0x10))
+	if ((status == TAG_OK) && (unLen == 0x10))
 	{
 		*pTagType     = ucComMF522Buf[0];
 		*(pTagType+1) = ucComMF522Buf[1];
 	}
-	else if (status!=MI_NOTAGERR) {
-		status = MI_ERR;
+	else if (status!=TAG_NOTAG) {
+		status = TAG_ERR;
 	}
 
 	return status;
@@ -46,16 +41,13 @@ char PcdAnticoll(uint8_t cascade, uint8_t *pSnr)
 	uint8_t   ucComMF522Buf[MAXRLEN];
 
 
-	//    ClearBitMask(Status2Reg,0x08);
 	WriteRawRC(BitFramingReg,0x00);
-	//   ClearBitMask(CollReg,0x80);
-
 	ucComMF522Buf[0] = cascade;
 	ucComMF522Buf[1] = 0x20;
 
 	status = PcdComMF522(PCD_TRANSCEIVE,ucComMF522Buf,2,ucComMF522Buf,&unLen);
 
-	if (status == MI_OK)
+	if (status == TAG_OK)
 	{
 		for (i=0; i<4; i++)
 		{
@@ -63,10 +55,9 @@ char PcdAnticoll(uint8_t cascade, uint8_t *pSnr)
 			snr_check ^= ucComMF522Buf[i];
 		}
 		if (snr_check != ucComMF522Buf[i])
-		{   status = MI_ERR;    }
+		{   status = TAG_ERR;    }
 	}
 
-	//   SetBitMask(CollReg,0x80);
 	return status;
 }
 
@@ -91,10 +82,10 @@ char PcdSelect(uint8_t cascade, uint8_t *pSnr)
 
 	status = PcdComMF522(PCD_TRANSCEIVE,ucComMF522Buf,9,ucComMF522Buf,&unLen);
 
-	if ((status == MI_OK) && (unLen == 0x18))
-	{   status = MI_OK;  }
+	if ((status == TAG_OK) && (unLen == 0x18))
+	{   status = TAG_OK;  }
 	else
-	{   status = MI_ERR;    }
+	{   status = TAG_ERR;    }
 
 	return status;
 }
@@ -111,8 +102,8 @@ char PcdAuthState(uint8_t   auth_mode,uint8_t   addr,uint8_t *pKey,uint8_t *pSnr
 	memcpy(&ucComMF522Buf[8], pSnr, 4);
 
 	status = PcdComMF522(PCD_AUTHENT,ucComMF522Buf,12,ucComMF522Buf,&unLen);
-	if ((status != MI_OK) || (!(ReadRawRC(Status2Reg) & 0x08)))
-	{   status = MI_ERR;   }
+	if ((status != TAG_OK) || (!(ReadRawRC(Status2Reg) & 0x08)))
+	{   status = TAG_ERR;   }
 
 	return status;
 }
@@ -133,14 +124,14 @@ char PcdRead(uint8_t addr,uint8_t *p )
 	CalulateCRC(ucComMF522Buf,16,CRC_buff);
 //	printf("debug %02x%02x %02x%02x   ",ucComMF522Buf[16],ucComMF522Buf[17],CRC_buff[0],CRC_buff[1]);
 
-	if ((status == MI_OK) && (unLen == 0x90))
+	if ((status == TAG_OK) && (unLen == 0x90))
 	{
-		if ((CRC_buff[0]!=ucComMF522Buf[16])||(CRC_buff[1]!=ucComMF522Buf[17])) { status = MI_ERRCRC; }
+		if ((CRC_buff[0]!=ucComMF522Buf[16])||(CRC_buff[1]!=ucComMF522Buf[17])) { status = TAG_ERRCRC; }
 		for (i=0; i<16; i++)
 		{    *(p +i) = ucComMF522Buf[i];   }
 	}
 	else
-	{   status = MI_ERR;   }
+	{   status = TAG_ERR;   }
 
 	return status;
 }
@@ -157,12 +148,11 @@ char PcdWrite(uint8_t   addr,uint8_t *p )
 
 	status = PcdComMF522(PCD_TRANSCEIVE,ucComMF522Buf,4,ucComMF522Buf,&unLen);
 
-	if ((status != MI_OK) || (unLen != 4) || ((ucComMF522Buf[0] & 0x0F) != 0x0A))
-	{   status = MI_ERR;   }
+	if ((status != TAG_OK) || (unLen != 4) || ((ucComMF522Buf[0] & 0x0F) != 0x0A))
+	{   status = TAG_ERR;   }
 
-	if (status == MI_OK)
+	if (status == TAG_OK)
 	{
-		//memcpy(ucComMF522Buf, p , 16);
 		for (i=0; i<16; i++)
 		{
 			ucComMF522Buf[i] = *(p +i);
@@ -170,8 +160,8 @@ char PcdWrite(uint8_t   addr,uint8_t *p )
 		CalulateCRC(ucComMF522Buf,16,&ucComMF522Buf[16]);
 
 		status = PcdComMF522(PCD_TRANSCEIVE,ucComMF522Buf,18,ucComMF522Buf,&unLen);
-		if ((status != MI_OK) || (unLen != 4) || ((ucComMF522Buf[0] & 0x0F) != 0x0A))
-		{   status = MI_ERR;   }
+		if ((status != TAG_OK) || (unLen != 4) || ((ucComMF522Buf[0] & 0x0F) != 0x0A))
+		{   status = TAG_ERR;   }
 	}
 
 	return status;
@@ -189,7 +179,6 @@ char PcdHalt(void)
 
 	status = PcdComMF522(PCD_TRANSCEIVE,ucComMF522Buf,4,ucComMF522Buf,&unLen);
 
-	//return MI_OK;
 	return status;
 }
 
@@ -224,18 +213,19 @@ char PcdReset(void)
 	WriteRawRC(ModeReg,0x3D);            //6363
 //	WriteRawRC(DivlEnReg,0x90);
 
-	return MI_OK;
+	return TAG_OK;
 }
 
+/*
 char M500PcdConfigISOType(uint8_t   type)
 {
-	if (type == 'A')                     //ISO14443_A
+	if (type == 'A')
 	{
 		ClearBitMask(Status2Reg,0x08);
-		WriteRawRC(ModeReg,0x3D);//3F
-		WriteRawRC(RxSelReg,0x86);//84
-		WriteRawRC(RFCfgReg,0x7F);   //4F
-		WriteRawRC(TReloadRegL,30);//tmoLength);// TReloadVal = 'h6a =tmoLength(dec)
+		WriteRawRC(ModeReg,0x3D);
+		WriteRawRC(RxSelReg,0x86);
+		WriteRawRC(RFCfgReg,0x7F);
+		WriteRawRC(TReloadRegL,30);
 		WriteRawRC(TReloadRegH,0);
 		WriteRawRC(TModeReg,0x8D);
 		WriteRawRC(TPrescalerReg,0x3E);
@@ -243,8 +233,9 @@ char M500PcdConfigISOType(uint8_t   type)
 	}
 	else{ return 1; }
 
-	return MI_OK;
+	return TAG_OK;
 }
+*/
 
 uint8_t ReadRawRC(uint8_t Address)
 {
@@ -283,7 +274,7 @@ char PcdComMF522(uint8_t   Command,
 		uint8_t *pOut ,
 		uint8_t *pOutLenBit)
 {
-	char   status = MI_ERR;
+	char   status = TAG_ERR;
 	uint8_t   irqEn   = 0x00;
 	uint8_t   waitFor = 0x00;
 	uint8_t   lastBits;
@@ -336,8 +327,8 @@ char PcdComMF522(uint8_t   Command,
 	{
 		if(!(ReadRawRC(ErrorReg)&0x1B))
 		{
-			status = MI_OK;
-			if (n & irqEn & 0x01) {status = MI_NOTAGERR;}
+			status = TAG_OK;
+			if (n & irqEn & 0x01) {status = TAG_NOTAG;}
 			if (Command == PCD_TRANSCEIVE) {
 				n = ReadRawRC(FIFOLevelReg);
 				lastBits = ReadRawRC(ControlReg) & 0x07;
@@ -352,7 +343,7 @@ char PcdComMF522(uint8_t   Command,
 				}
 			}
 		}
-		else {status = MI_ERR;}
+		else {status = TAG_ERR;}
 
 	}
 

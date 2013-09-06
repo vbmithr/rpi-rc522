@@ -1,8 +1,6 @@
 #include <stdint.h>
 
-/////////////////////////////////////////////////////////////////////
-//MF522
-/////////////////////////////////////////////////////////////////////
+//MF522 command
 #define PCD_IDLE              0x00
 #define PCD_AUTHENT           0x0E
 #define PCD_RECEIVE           0x08
@@ -11,9 +9,7 @@
 #define PCD_RESETPHASE        0x0F
 #define PCD_CALCCRC           0x03
 
-/////////////////////////////////////////////////////////////////////
 //Mifare_One
-/////////////////////////////////////////////////////////////////////
 #define PICC_REQIDL           0x26
 #define PICC_REQALL           0x52
 #define PICC_ANTICOLL1        0x93
@@ -29,17 +25,11 @@
 #define PICC_TRANSFER         0xB0
 #define PICC_HALT             0x50
 
-/////////////////////////////////////////////////////////////////////
 //MF522 FIFO
-/////////////////////////////////////////////////////////////////////
 #define DEF_FIFO_LENGTH       64                 //FIFO size=64byte
 #define MAXRLEN  18
 
-/////////////////////////////////////////////////////////////////////
-//MF522
-/////////////////////////////////////////////////////////////////////
-// PAGE 0
-#define     RFU00                 0x00
+//MF522 registers
 #define     CommandReg            0x01
 #define     ComIEnReg             0x02
 #define     DivlEnReg             0x03
@@ -54,9 +44,7 @@
 #define     ControlReg            0x0C
 #define     BitFramingReg         0x0D
 #define     CollReg               0x0E
-#define     RFU0F                 0x0F
-// PAGE 1
-#define     RFU10                 0x10
+
 #define     ModeReg               0x11
 #define     TxModeReg             0x12
 #define     RxModeReg             0x13
@@ -66,19 +54,12 @@
 #define     RxSelReg              0x17
 #define     RxThresholdReg        0x18
 #define     DemodReg              0x19
-#define     RFU1A                 0x1A
-#define     RFU1B                 0x1B
 #define     MifareReg             0x1C
-#define     RFU1D                 0x1D
-#define     RFU1E                 0x1E
 #define     SerialSpeedReg        0x1F
-// PAGE 2
-#define     RFU20                 0x20
+
 #define     CRCResultRegM         0x21
 #define     CRCResultRegL         0x22
-#define     RFU23                 0x23
 #define     ModWidthReg           0x24
-#define     RFU25                 0x25
 #define     RFCfgReg              0x26
 #define     GsNReg                0x27
 #define     CWGsCfgReg            0x28
@@ -89,8 +70,7 @@
 #define     TReloadRegL           0x2D
 #define     TCounterValueRegH     0x2E
 #define     TCounterValueRegL     0x2F
-// PAGE 3
-#define     RFU30                 0x30
+
 #define     TestSel1Reg           0x31
 #define     TestSel2Reg           0x32
 #define     TestPinEnReg          0x33
@@ -102,26 +82,15 @@
 #define     TestDAC1Reg           0x39
 #define     TestDAC2Reg           0x3A
 #define     TestADCReg            0x3B
-#define     RFU3C                 0x3C
-#define     RFU3D                 0x3D
-#define     RFU3E                 0x3E
-#define     RFU3F		  0x3F
 
 /////////////////////////////////////////////////////////////////////
 //MF522
 /////////////////////////////////////////////////////////////////////
-#define 	MI_OK                 0
-#define 	MI_NOTAGERR           (1)
-#define 	MI_ERR                (2)
-#define 	MI_ERRCRC             (3)
-
-#define	SHAQU1	0X01
-#define	KUAI4	0X04
-#define	KUAI7	0X07
-#define	REGCARD	0xa1
-#define	CONSUME	0xa2
-#define READCARD	0xa3
-#define ADDMONEY	0xa4
+#define 	TAG_OK                 0
+#define 	TAG_NOTAG           (1)
+#define 	TAG_ERR                (2)
+#define 	TAG_ERRCRC             (3)
+typedef char tag_stat;
 
 
 void InitRc522(void);
@@ -139,7 +108,7 @@ char PcdReset(void);
 char PcdRequest(unsigned char req_code,unsigned char *pTagType);
 void PcdAntennaOn(void);
 void PcdAntennaOff(void);
-char M500PcdConfigISOType(unsigned char type);
+//char M500PcdConfigISOType(unsigned char type);
 char PcdAnticoll(uint8_t , uint8_t *);
 char PcdSelect(uint8_t , uint8_t *);
 char PcdAuthState(unsigned char auth_mode,unsigned char addr,unsigned char *pKey,unsigned char *pSnr);
