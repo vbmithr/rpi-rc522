@@ -95,10 +95,10 @@ int main(int argc, char *argv[]) {
 				switch (CType) {
 				case 0x4400:
 					for (i=0;i<0x0f;i+=4) {
-						status=PcdRead(i,buff);
+//						status=PcdRead(i,buff);
 						printf("%02x -> ",i);
 						if (status==MI_OK){
-							for (tmp=0;tmp<16;tmp++) {printf("%02x",buff[tmp]);}
+//							for (tmp=0;tmp<16;tmp++) {printf("%02x",buff[tmp]);}
 						}else if (status==MI_ERRCRC) {
 							printf("CRC Error");
 						}else{
