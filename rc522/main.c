@@ -12,15 +12,14 @@
 #include <syslog.h>
 #include <sys/wait.h>
 #include <signal.h>
+#include "rfid.h"
 #include "bcm2835.h"
-#include "rc522.h"
 #include "config.h"
 
 uint8_t HW_init();
 
 int main(int argc, char *argv[]) {
 
-	uint8_t buff[MAXRLEN];
 	uint8_t SN[10];
 	uint16_t CType=0;
 	uint8_t SN_len=0;
@@ -38,38 +37,15 @@ int main(int argc, char *argv[]) {
 	InitRc522();
 
 	for (;;) {
-		status= PcdRequest(PICC_REQIDL,buff);
+		status= find_tag(&CType);
 		if (status==MI_NOTAGERR) {
 			usleep(200000);
-			//			bcm2835_delay(200);
-			//			printf("Sleep\r");
-			//			fflush(stdout);
 			continue;
 		}else if (status!=MI_OK) {continue;}
 
-		CType=buff[0]<<8|buff[1];
+
 		//		memset(SN,0,sizeof(SN));
 
-		if (PcdAnticoll(PICC_ANTICOLL1,buff)!=MI_OK) continue;
-		if (PcdSelect(PICC_ANTICOLL1,buff)!=MI_OK) continue;
-		if (buff[0]==0x88) {
-			memcpy(SN,&buff[1],3);
-			if (PcdAnticoll(PICC_ANTICOLL2,buff)!=MI_OK) continue;
-			if (PcdSelect(PICC_ANTICOLL2,buff)!=MI_OK) continue;
-			if (buff[0]==0x88) {
-				memcpy(&SN[3],&buff[1],3);
-				if (PcdAnticoll(PICC_ANTICOLL3,buff)!=MI_OK) continue;
-				if (PcdSelect(PICC_ANTICOLL3,buff)!=MI_OK) continue;
-				memcpy(&SN[6],buff,4);
-				SN_len=10;
-			}else{
-				memcpy(&SN[3],buff,4);
-				SN_len=7;
-			}
-		}else{
-			memcpy(SN,&buff[0],4);
-			SN_len=4;
-		}
 
 		p=sn_str;
 		*(p++)='[';
@@ -165,7 +141,7 @@ uint8_t HW_init() {
 			return 1;
 		}
 		uid=(int)strtol(user,NULL,10);
-		if (uid<2) {
+		if (uid<100) {
 			fprintf(stderr,"Invalid UID: %s\n",user);
 			return 1;
 		}
