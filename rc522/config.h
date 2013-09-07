@@ -19,8 +19,10 @@
 #include <signal.h>
 #include <ctype.h>
 
-
-extern char config_file[];
+extern char config_file[255];
+int read_conf_uid(uid_t * ruid);
+int open_config_file(char *);
+void close_config_file();
 int find_config_param(char *, char *, int, int);
 
 #endif /* CONFIG_H_ */

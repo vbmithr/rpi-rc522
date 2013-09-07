@@ -20,6 +20,7 @@ uint8_t HW_init();
 
 int main(int argc, char *argv[]) {
 
+	uid_t uid;
 	uint8_t SN[10];
 	uint16_t CType=0;
 	uint8_t SN_len=0;
@@ -37,9 +38,14 @@ int main(int argc, char *argv[]) {
 	char save_mem=0;
 	char fmem_path[255];
 
-	//	char* argv[ARG_MAX];
+	if (open_config_file(config_file)!=0) {
+		syslog(LOG_DAEMON|LOG_ERR,"Can't open config file!");
+		return 1;
+	}
 
 	if (HW_init()) return 1; // Если не удалось инициализировать RC522 выходим.
+	if (read_conf_uid(&uid)!=0) return 1;
+	setuid(uid);
 	InitRc522();
 
 	if (find_config_param("NEW_TAG_PATH=",fmem_path,sizeof(fmem_path)-1,0)) {
@@ -64,9 +70,6 @@ int main(int argc, char *argv[]) {
 		}else if (status!=TAG_OK) {continue;}
 
 		if (select_tag_sn(SN,&SN_len)!=TAG_OK) {continue;}
-
-		//		memset(SN,0,sizeof(SN));
-
 
 		p=sn_str;
 		*(p++)='[';
@@ -158,30 +161,16 @@ int main(int argc, char *argv[]) {
 
 	bcm2835_spi_end();
 	bcm2835_close();
+	close_config_file();
 	return 0;
 
 }
 
 
 uint8_t HW_init() {
-	char user[5];
-	long int uid;
-
 	if (!bcm2835_init()) {
-		perror("Can't init bcm2835!\n");
+		syslog(LOG_DAEMON|LOG_ERR,"Can't init bcm2835!\n");
 		return 1;
-	}
-	if (getuid()==0) {
-		if (find_config_param("UID=",user,sizeof(user),0)<=0) {
-			perror("UID must be set!\n");
-			return 1;
-		}
-		uid=(int)strtol(user,NULL,10);
-		if (uid<100) {
-			fprintf(stderr,"Invalid UID: %s\n",user);
-			return 1;
-		}
-		setuid(uid);
 	}
 	bcm2835_spi_begin();
 	bcm2835_spi_setBitOrder(BCM2835_SPI_BIT_ORDER_MSBFIRST);      // The default

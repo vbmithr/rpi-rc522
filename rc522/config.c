@@ -7,16 +7,48 @@
 
 #include "config.h"
 
-char config_file[]="/usr/local/etc/rc522.conf";
-FILE *fdconfig;
+char config_file[255]="/etc/RC522.conf";
+FILE *fdconfig=NULL;
 char str[255];
+
+
+int read_conf_uid(uid_t * ruid) {
+	char user[5];
+	uid_t uid;
+
+	if (find_config_param("UID=",user,sizeof(user),0)<=0) {
+		if  (getuid()<100) {
+			syslog(LOG_DAEMON|LOG_ERR,"UID must be set!\n");
+			return -1;
+		}
+	}else{
+		uid=(int)strtol(user,NULL,10);
+		if (uid<100) {
+			syslog(LOG_DAEMON|LOG_ERR,"Invalid UID: %s\n",user);
+			return -1;
+		}
+		*ruid=uid;
+	}
+	return 0;
+}
+
+int open_config_file(char * conffile) {
+	if (fdconfig==NULL) {
+		if (access(conffile,R_OK)!=0) return -1;
+		if ((fdconfig=fopen(conffile,"r"))==NULL) return -1;
+	}
+	return 0;
+}
+
+void close_config_file() {
+	fclose(fdconfig);
+}
 
 int find_config_param(char * param_name, char * param_val, int val_len, int log) {
 	int param_found=0;
 	char * pstr;
 
-	if ((fdconfig=fopen("/usr/local/etc/rc522.conf","r"))==NULL) return -1;
-
+	if (fseek(fdconfig, 0L, SEEK_SET)!=0) return -1;
 	while (fgets(str,sizeof(str)-1,fdconfig)!=NULL) {
 		if ((pstr=strchr(str,'#'))!=NULL) *pstr=0; //Заменим # на конец строки.
 		if ((pstr=strstr(str,param_name))!=NULL) {
@@ -29,9 +61,9 @@ int find_config_param(char * param_name, char * param_val, int val_len, int log)
 #if DEBUG==1
 			printf("Debug:%s\n",param_val);
 #endif
-break;
+			break;
 		}
 	}
-	fclose(fdconfig);
+	//	fclose(fdconfig);
 	return param_found;
 }
