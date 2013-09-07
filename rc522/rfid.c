@@ -49,7 +49,8 @@ tag_stat read_tag_str(uint8_t addr, char * str) {
 	char *p;
 	uint8_t i;
 
-	char buff[MAXRLEN];
+	uint8_t buff[MAXRLEN];
+
 	tmp=PcdRead(addr,buff);
 	p=str;
 	if (tmp==TAG_OK) {

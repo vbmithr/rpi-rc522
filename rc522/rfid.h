@@ -11,6 +11,7 @@
 #include <string.h>
 #include "rc522.h"
 #include <stdint.h>
+#include <stdio.h>
 
 
 tag_stat find_tag(uint16_t *);
