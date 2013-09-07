@@ -53,7 +53,7 @@ int main(int argc, char *argv[]) {
 		if (fmem_path[strlen(fmem_path)-1]!='/') {
 			sprintf(&fmem_path[strlen(fmem_path)],"/");
 			if (strlen(fmem_path)>=240) {
-				perror("Too long path for memory dump files!");
+				perror("Too long path for tag dump files!");
 				return 1;
 			}
 		}
