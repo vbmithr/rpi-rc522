@@ -85,8 +85,8 @@ int main(int argc, char *argv[]) {
 			child=fork();
 			if (child==0) {
 				fclose(stdin);
-				fclose(stdout);
-				fclose(stderr);
+				freopen("","w",stdout);
+				freopen("","w",stderr);
 				execl("/bin/sh","sh","-c",str,NULL);
 			} else if (child>0) {
 				i=6000;
