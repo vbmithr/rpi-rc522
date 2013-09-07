@@ -20,6 +20,7 @@
 #include <ctype.h>
 
 extern char config_file[255];
+void reload_config (int sugnum);
 int read_conf_uid(uid_t * ruid);
 int open_config_file(char *);
 void close_config_file();

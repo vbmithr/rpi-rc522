@@ -11,10 +11,13 @@ char config_file[255]="/etc/RC522.conf";
 FILE *fdconfig=NULL;
 char str[255];
 
+void reload_config (int sugnum) {
 
+}
 int read_conf_uid(uid_t * ruid) {
 	char user[5];
 	uid_t uid;
+	gid_t gid;
 
 	if (find_config_param("UID=",user,sizeof(user),0)<=0) {
 		if  (getuid()<100) {
@@ -28,6 +31,10 @@ int read_conf_uid(uid_t * ruid) {
 			return -1;
 		}
 		*ruid=uid;
+	}
+	if (find_config_param("GID=",user,sizeof(user),0)==1) {
+		gid=(int)strtol(user,NULL,10);
+		setgid(gid);
 	}
 	return 0;
 }
