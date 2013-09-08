@@ -115,3 +115,4 @@ char PcdAuthState(unsigned char auth_mode,unsigned char addr,unsigned char *pKey
 char PcdWrite(unsigned char addr,unsigned char *pData);
 char PcdRead(unsigned char addr,unsigned char *pData);
 char PcdHalt(void);
+uint8_t PcdGetMode(void);

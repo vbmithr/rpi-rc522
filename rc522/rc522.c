@@ -205,6 +205,7 @@ void CalulateCRC(uint8_t *pIn ,uint8_t   len,uint8_t *pOut )
 char PcdReset(void)
 {
 	WriteRawRC(CommandReg,PCD_RESETPHASE);
+	usleep(10);
 	WriteRawRC(TModeReg,0x8D);
 	WriteRawRC(TPrescalerReg,0x3E);
 	WriteRawRC(TReloadRegL,30);
@@ -368,3 +369,9 @@ void PcdAntennaOff(void)
 	ClearBitMask(TxControlReg, 0x03);
 }
 
+uint8_t PcdGetMode(void) {
+	uint8_t reg;
+	reg= ReadRawRC(ModeReg);
+	printf("DD %02x\n",reg);
+	return reg;
+}

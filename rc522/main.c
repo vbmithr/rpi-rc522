@@ -16,7 +16,7 @@
 #include "bcm2835.h"
 #include "config.h"
 
-uint8_t HW_init();
+uint8_t HW_init(uint32_t spi_speed, uint8_t gpio);
 
 int main(int argc, char *argv[]) {
 
@@ -37,13 +37,30 @@ int main(int argc, char *argv[]) {
 	FILE * fmem_str;
 	char save_mem=0;
 	char fmem_path[255];
+	uint8_t use_gpio=0;
+	uint8_t gpio=255;
+	uint32_t spi_speed=10000000L;
 
 	if (open_config_file(config_file)!=0) {
 		syslog(LOG_DAEMON|LOG_ERR,"Can't open config file!");
 		return 1;
 	}
+	if (find_config_param("GPIO=",str,sizeof(str)-1,1)==1) {
+		gpio=(uint8_t)strtol(str,NULL,10);
+		if (gpio<28) {
+			use_gpio=1;
+		} else {
+			gpio=255;
+			use_gpio=0;
+		}
+	}
+	if (find_config_param("SPI_SPEED=",str,sizeof(str)-1,1)==1) {
+		spi_speed=(uint32_t)strtoul(str,NULL,10);
+		if (spi_speed>125000L) spi_speed=125000L;
+		if (spi_speed<4) spi_speed=4;
+	}
 
-	if (HW_init()) return 1; // Если не удалось инициализировать RC522 выходим.
+	if (HW_init(spi_speed,gpio)) return 1; // Если не удалось инициализировать RC522 выходим.
 	if (read_conf_uid(&uid)!=0) return 1;
 	setuid(uid);
 	InitRc522();
@@ -89,6 +106,7 @@ int main(int argc, char *argv[]) {
 				freopen("","w",stderr);
 				execl("/bin/sh","sh","-c",str,NULL);
 			} else if (child>0) {
+				if (use_gpio) bcm2835_gpio_write(gpio, HIGH);
 				i=6000;
 				do {
 					usleep(10000);
@@ -107,6 +125,7 @@ int main(int argc, char *argv[]) {
 					printf("Exit\n");
 #endif
 				}
+				if (use_gpio) bcm2835_gpio_write(gpio, LOW);
 			}else{
 				syslog(LOG_DAEMON|LOG_ERR,"Can't run child process! (%s %s)\n",sn_str,str);
 			}
@@ -167,15 +186,23 @@ int main(int argc, char *argv[]) {
 }
 
 
-uint8_t HW_init() {
+uint8_t HW_init(uint32_t spi_speed, uint8_t gpio) {
+	uint16_t sp;
+
+	sp=(uint16_t)(250000L/spi_speed);
 	if (!bcm2835_init()) {
 		syslog(LOG_DAEMON|LOG_ERR,"Can't init bcm2835!\n");
 		return 1;
 	}
+	if (gpio<28) {
+		bcm2835_gpio_fsel(gpio, BCM2835_GPIO_FSEL_OUTP);
+		bcm2835_gpio_write(gpio, LOW);
+	}
+
 	bcm2835_spi_begin();
 	bcm2835_spi_setBitOrder(BCM2835_SPI_BIT_ORDER_MSBFIRST);      // The default
 	bcm2835_spi_setDataMode(BCM2835_SPI_MODE0);                   // The default
-	bcm2835_spi_setClockDivider(BCM2835_SPI_CLOCK_DIVIDER_32); // The default
+	bcm2835_spi_setClockDivider(sp); // The default
 	bcm2835_spi_chipSelect(BCM2835_SPI_CS0);                      // The default
 	bcm2835_spi_setChipSelectPolarity(BCM2835_SPI_CS0, LOW);      // the default
 	return 0;
