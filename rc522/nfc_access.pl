@@ -3,6 +3,11 @@
 @data=("\tA|B\tA|B\tA|B\tA|B","\tA|B\tB\tn\tn","\tA|B\tn\tn\tn","\tA|B\tB\tB\tA|B","\tA|B\tn\tn\tA|B","\tB\tn\tn\tn","\tB\tB\tn\tn","\tn\tn\tn\tn");
 @trailer=("n\tA\tA\tn\tA\tA","n\tB\tA|B\tn\tn\tB","n\tn\tA\tn\tA\tn","n\tn\tA|B\tn\tn\tn","n\tA\tA\tA\tA\tA","n\tn\tA|B\tB\tn\tn","n\tB\tA|B\tB\tn\tB","n\tn\tA|B\tn\tn\tn");
 
+if ($#ARGV<0) {
+    print("Usage:\tnfc_access.pl 0x<byte6> 0x<byte7> 0x<byte8>\n or \tnfc_access.pl <byte6>:<byte7>:<byte8>\n\n");
+    exit 1;
+}
+
 if ($#ARGV==0) {
     if ($ARGV[0]=~/(\w{2}):(\w{2}):(\w{2})/) {
 	print $1," ",$2," ",$3,"\n";
