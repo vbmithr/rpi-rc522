@@ -17,6 +17,10 @@
 #include "config.h"
 
 uint8_t HW_init(uint32_t spi_speed, uint8_t gpio);
+char *KeyA="Test01";
+char *KeyB="Test10";
+
+
 
 int main(int argc, char *argv[]) {
 
@@ -97,6 +101,7 @@ int main(int argc, char *argv[]) {
 		*(p++)=']';
 		*(p++)=0;
 
+		if (use_gpio) bcm2835_gpio_write(gpio, HIGH);
 		//ищем SN в конфиге
 		if (find_config_param(sn_str,str,sizeof(str),1)>0) {
 			child=fork();
@@ -106,7 +111,7 @@ int main(int argc, char *argv[]) {
 				freopen("","w",stderr);
 				execl("/bin/sh","sh","-c",str,NULL);
 			} else if (child>0) {
-				if (use_gpio) bcm2835_gpio_write(gpio, HIGH);
+//				if (use_gpio) bcm2835_gpio_write(gpio, HIGH);
 				i=6000;
 				do {
 					usleep(10000);
@@ -125,7 +130,7 @@ int main(int argc, char *argv[]) {
 					printf("Exit\n");
 #endif
 				}
-				if (use_gpio) bcm2835_gpio_write(gpio, LOW);
+//				if (use_gpio) bcm2835_gpio_write(gpio, LOW);
 			}else{
 				syslog(LOG_DAEMON|LOG_ERR,"Can't run child process! (%s %s)\n",sn_str,str);
 			}
@@ -160,11 +165,13 @@ int main(int argc, char *argv[]) {
 				if ((fmem_str=fopen(str,"r"))!=NULL) {
 					fclose(fmem_str);
 					PcdHalt();
+					if (use_gpio) bcm2835_gpio_write(gpio, LOW);
 					continue;
 				}
 				if ((fmem_str=fopen(str,"w"))==NULL) {
 					syslog(LOG_DAEMON|LOG_ERR,"Cant open file for write: %s",str);
 					PcdHalt();
+					if (use_gpio) bcm2835_gpio_write(gpio, LOW);
 					continue;
 				}
 				for (i=0;i<max_page;i+=page_step) {
@@ -175,7 +182,7 @@ int main(int argc, char *argv[]) {
 			}
 		}
 		PcdHalt();
-
+		if (use_gpio) bcm2835_gpio_write(gpio, LOW);
 	}
 
 	bcm2835_spi_end();
