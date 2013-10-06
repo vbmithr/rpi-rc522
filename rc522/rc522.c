@@ -4,6 +4,7 @@
 #include <unistd.h>
 #include "bcm2835.h"
 #include "rc522.h"
+#include "main.h"
 
 void InitRc522(void)
 {
@@ -382,7 +383,7 @@ char PcdComMF522(uint8_t   Command,
 			status = TAG_ERR;}
 
 		if (PcdErr&0x08) {
-			fprintf (stderr,"COllision \n");
+			if (debug) fprintf (stderr,"COllision \n");
 			status = TAG_COLLISION;
 
 		}
