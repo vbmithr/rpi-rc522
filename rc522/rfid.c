@@ -20,13 +20,8 @@ tag_stat find_tag(uint16_t * card_type) {
 }
 
 tag_stat select_tag_sn(uint8_t * sn, uint8_t * len){
-	tag_stat tgs;
 
-	if ((tgs=PcdAnticoll(PICC_ANTICOLL1,buff))!=TAG_OK) {
-		if (tgs==TAG_COLLISION) {
-			printf("Coll: %02x%02x%02x%02x\n",buff[0],buff[1],buff[2],buff[3]);
-		}
-		return tgs;}
+	if (PcdAnticoll(PICC_ANTICOLL1,buff)!=TAG_OK) {return TAG_ERR;}
 	if (PcdSelect(PICC_ANTICOLL1,buff)!=TAG_OK) {return TAG_ERR;}
 	if (buff[0]==0x88) {
 		memcpy(sn,&buff[1],3);
