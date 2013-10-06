@@ -20,17 +20,24 @@ tag_stat find_tag(uint16_t * card_type) {
 }
 
 tag_stat select_tag_sn(uint8_t * sn, uint8_t * len){
+	tag_stat tgs;
 
-	if (PcdAnticoll(PICC_ANTICOLL1,buff)!=TAG_OK) return TAG_ERR;
-	if (PcdSelect(PICC_ANTICOLL1,buff)!=TAG_OK) return TAG_ERR;
+	if ((tgs=PcdAnticoll(PICC_ANTICOLL1,buff))!=TAG_OK) {
+		if (tgs==TAG_COLLISION) {
+			printf("Coll: %02x%02x%02x%02x\n",buff[0],buff[1],buff[2],buff[3]);
+		}
+		return tgs;}
+	if (PcdSelect(PICC_ANTICOLL1,buff)!=TAG_OK) {return TAG_ERR;}
 	if (buff[0]==0x88) {
 		memcpy(sn,&buff[1],3);
-		if (PcdAnticoll(PICC_ANTICOLL2,buff)!=TAG_OK) return TAG_ERR;
-		if (PcdSelect(PICC_ANTICOLL2,buff)!=TAG_OK) return TAG_ERR;
+		if (PcdAnticoll(PICC_ANTICOLL2,buff)!=TAG_OK) {
+			return TAG_ERR;}
+		if (PcdSelect(PICC_ANTICOLL2,buff)!=TAG_OK) {return TAG_ERR;}
 		if (buff[0]==0x88) {
 			memcpy(sn+3,&buff[1],3);
-			if (PcdAnticoll(PICC_ANTICOLL3,buff)!=TAG_OK) return TAG_ERR;
-			if (PcdSelect(PICC_ANTICOLL3,buff)!=TAG_OK) return TAG_ERR;
+			if (PcdAnticoll(PICC_ANTICOLL3,buff)!=TAG_OK) {
+				return TAG_ERR;}
+			if (PcdSelect(PICC_ANTICOLL3,buff)!=TAG_OK) {return TAG_ERR;}
 			memcpy(sn+6,buff,4);
 			*len=10;
 		}else{

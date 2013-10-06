@@ -17,9 +17,10 @@
 #include "config.h"
 
 uint8_t HW_init(uint32_t spi_speed, uint8_t gpio);
+void usage(char *);
 char *KeyA="Test01";
 char *KeyB="Test10";
-
+uint8_t debug=0;
 
 
 int main(int argc, char *argv[]) {
@@ -45,8 +46,18 @@ int main(int argc, char *argv[]) {
 	uint8_t gpio=255;
 	uint32_t spi_speed=10000000L;
 
+	if (argc>1) {
+		if (strcmp(argv[1],"-d")==0) {debug=1;
+		printf("Debug mode.\n");
+		}else{
+			usage(argv[0]);
+			exit(1);
+		}
+	}
+
 	if (open_config_file(config_file)!=0) {
-		syslog(LOG_DAEMON|LOG_ERR,"Can't open config file!");
+		if (debug) {fprintf(stderr,"Can't open config file!");}
+		else{syslog(LOG_DAEMON|LOG_ERR,"Can't open config file!");}
 		return 1;
 	}
 	if (find_config_param("GPIO=",str,sizeof(str)-1,1)==1) {
@@ -74,13 +85,11 @@ int main(int argc, char *argv[]) {
 		if (fmem_path[strlen(fmem_path)-1]!='/') {
 			sprintf(&fmem_path[strlen(fmem_path)],"/");
 			if (strlen(fmem_path)>=240) {
-				perror("Too long path for tag dump files!");
+				if (debug) {fprintf(stderr,"Too long path for tag dump files!");}
+				else{syslog(LOG_DAEMON|LOG_ERR,"Too long path for tag dump files!");}
 				return 1;
 			}
 		}
-#if DEBUG==1
-		printf("Debug Path: %s\n",fmem_path);
-#endif
 	}
 
 	for (;;) {
@@ -88,7 +97,7 @@ int main(int argc, char *argv[]) {
 		if (status==TAG_NOTAG) {
 			usleep(200000);
 			continue;
-		}else if (status!=TAG_OK) {continue;}
+		}else if ((status!=TAG_OK)&&(status!=TAG_COLLISION)) {continue;}
 
 		if (select_tag_sn(SN,&SN_len)!=TAG_OK) {continue;}
 
@@ -97,6 +106,11 @@ int main(int argc, char *argv[]) {
 		for (tmp=0;tmp<SN_len;tmp++) {
 			sprintf(p,"%02x",SN[tmp]);
 			p+=2;
+		}
+		//for debugging
+		if (debug) {
+		*p=0;
+		fprintf(stderr,"Type: %04x, Serial: %s\n",CType,&sn_str[1]);
 		}
 		*(p++)=']';
 		*(p++)=0;
@@ -111,7 +125,6 @@ int main(int argc, char *argv[]) {
 				freopen("","w",stderr);
 				execl("/bin/sh","sh","-c",str,NULL);
 			} else if (child>0) {
-//				if (use_gpio) bcm2835_gpio_write(gpio, HIGH);
 				i=6000;
 				do {
 					usleep(10000);
@@ -122,22 +135,19 @@ int main(int argc, char *argv[]) {
 				if (tmp!=child) {
 					kill(child,SIGKILL);
 					wait3(NULL,0,NULL);
-#if DEBUG==1
-					printf("Killed\n");
-#endif
+					if (debug) {fprintf(stderr,"Killed\n");}
 				}else {
-#if DEBUG==1
-					printf("Exit\n");
-#endif
+					if (debug) {fprintf(stderr,"Exit\n");}
 				}
-//				if (use_gpio) bcm2835_gpio_write(gpio, LOW);
 			}else{
-				syslog(LOG_DAEMON|LOG_ERR,"Can't run child process! (%s %s)\n",sn_str,str);
+				if (debug) {fprintf(stderr,"Can't run child process! (%s %s)\n",sn_str,str);}
+				else{syslog(LOG_DAEMON|LOG_ERR,"Can't run child process! (%s %s)\n",sn_str,str);}
 			}
 
 		}else{
 
-			syslog(LOG_DAEMON|LOG_INFO,"New tag: type=%04x SNlen=%d SN=%s\n",CType,SN_len,sn_str);
+			if (debug) {fprintf(stderr,"New tag: type=%04x SNlen=%d SN=%s\n",CType,SN_len,sn_str);}
+				else{syslog(LOG_DAEMON|LOG_INFO,"New tag: type=%04x SNlen=%d SN=%s\n",CType,SN_len,sn_str);}
 
 			if (save_mem) {
 				switch (CType) {
@@ -147,6 +157,7 @@ int main(int argc, char *argv[]) {
 					break;
 				case 0x0400:
 					PcdHalt();
+					if (use_gpio) bcm2835_gpio_write(gpio, LOW);
 					continue;
 					max_page=0x3f;
 					page_step=1;
@@ -215,3 +226,6 @@ uint8_t HW_init(uint32_t spi_speed, uint8_t gpio) {
 	return 0;
 }
 
+void usage(char * str) {
+	printf("Usage:\n%s [options]\n\nOptions:\n -d\t Debug mode\n\n",str);
+}

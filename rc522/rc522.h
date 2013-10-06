@@ -90,6 +90,7 @@
 #define 	TAG_NOTAG           (1)
 #define 	TAG_ERR                (2)
 #define 	TAG_ERRCRC             (3)
+#define 	TAG_COLLISION             (4)
 typedef char tag_stat;
 
 
@@ -115,4 +116,3 @@ char PcdAuthState(unsigned char auth_mode,unsigned char addr,unsigned char *pKey
 char PcdWrite(unsigned char addr,unsigned char *pData);
 char PcdRead(unsigned char addr,unsigned char *pData);
 char PcdHalt(void);
-uint8_t PcdGetMode(void);

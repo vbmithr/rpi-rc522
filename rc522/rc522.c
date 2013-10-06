@@ -26,6 +26,9 @@ char PcdRequest(uint8_t req_code,uint8_t *pTagType)
 		*pTagType     = ucComMF522Buf[0];
 		*(pTagType+1) = ucComMF522Buf[1];
 	}
+	else if (status == TAG_COLLISION) {
+//		printf("ATQA %02x%02x\n",ucComMF522Buf[0],ucComMF522Buf[1]);
+	}
 	else if (status!=TAG_NOTAG) {
 		status = TAG_ERR;
 	}
@@ -39,13 +42,30 @@ char PcdAnticoll(uint8_t cascade, uint8_t *pSnr)
 	uint8_t   i,snr_check=0;
 	uint8_t   unLen;
 	uint8_t   ucComMF522Buf[MAXRLEN];
+	uint8_t   pass=32;
+	uint8_t	  collbits=0;
 
-
+	i=0;
 	WriteRawRC(BitFramingReg,0x00);
-	ucComMF522Buf[0] = cascade;
-	ucComMF522Buf[1] = 0x20;
-
-	status = PcdComMF522(PCD_TRANSCEIVE,ucComMF522Buf,2,ucComMF522Buf,&unLen);
+	do {
+		ucComMF522Buf[0] = cascade;
+		ucComMF522Buf[1] = 0x20+collbits;
+		//	WriteRawRC(0x0e,0);
+		status = PcdComMF522(PCD_TRANSCEIVE,ucComMF522Buf,2+i,ucComMF522Buf,&unLen);
+		if (status == TAG_COLLISION) {
+			collbits=ReadRawRC(CollReg)&0x1f;
+			if (collbits==0) collbits=32;
+			i=(collbits-1)/8 +1;
+//			printf ("--- %02x %02x %02x %02x %d\n",ucComMF522Buf[0],ucComMF522Buf[1],ucComMF522Buf[2],ucComMF522Buf[3],unLen);
+			ucComMF522Buf[i-1]|=(1<<((collbits-1)%8));
+			ucComMF522Buf[5]=ucComMF522Buf[3];
+			ucComMF522Buf[4]=ucComMF522Buf[2];
+			ucComMF522Buf[3]=ucComMF522Buf[1];
+			ucComMF522Buf[2]=ucComMF522Buf[0];
+			WriteRawRC(BitFramingReg,(collbits % 8));
+//			printf (" %d %d %02x %d\n",collbits,i,ucComMF522Buf[i+1],collbits % 8);
+		}
+	} while (((--pass)>0)&&(status==TAG_COLLISION));
 
 	if (status == TAG_OK)
 	{
@@ -122,7 +142,7 @@ char PcdRead(uint8_t addr,uint8_t *p )
 
 	status = PcdComMF522(PCD_TRANSCEIVE,ucComMF522Buf,4,ucComMF522Buf,&unLen);
 	CalulateCRC(ucComMF522Buf,16,CRC_buff);
-//	printf("debug %02x%02x %02x%02x   ",ucComMF522Buf[16],ucComMF522Buf[17],CRC_buff[0],CRC_buff[1]);
+	//	printf("debug %02x%02x %02x%02x   ",ucComMF522Buf[16],ucComMF522Buf[17],CRC_buff[0],CRC_buff[1]);
 
 	if ((status == TAG_OK) && (unLen == 0x90))
 	{
@@ -205,14 +225,22 @@ void CalulateCRC(uint8_t *pIn ,uint8_t   len,uint8_t *pOut )
 char PcdReset(void)
 {
 	WriteRawRC(CommandReg,PCD_RESETPHASE);
-	usleep(10);
+	usleep(10000);
+	ClearBitMask(TxControlReg,0x03);
+	usleep(10000);
+	SetBitMask(TxControlReg,0x03);
 	WriteRawRC(TModeReg,0x8D);
 	WriteRawRC(TPrescalerReg,0x3E);
 	WriteRawRC(TReloadRegL,30);
 	WriteRawRC(TReloadRegH,0);
 	WriteRawRC(TxASKReg,0x40);
 	WriteRawRC(ModeReg,0x3D);            //6363
-//	WriteRawRC(DivlEnReg,0x90);
+	//	WriteRawRC(DivlEnReg,0x90);
+	WriteRawRC(RxThresholdReg,0x84);
+	WriteRawRC(RFCfgReg,0x68);
+	WriteRawRC(GsNReg,0xff);
+	WriteRawRC(CWGsCfgReg,0x2f);
+	//	WriteRawRC(ModWidthReg,0x2f);
 
 	return TAG_OK;
 }
@@ -236,7 +264,7 @@ char M500PcdConfigISOType(uint8_t   type)
 
 	return TAG_OK;
 }
-*/
+ */
 
 uint8_t ReadRawRC(uint8_t Address)
 {
@@ -281,6 +309,9 @@ char PcdComMF522(uint8_t   Command,
 	uint8_t   lastBits;
 	uint8_t   n;
 	uint32_t   i;
+	uint8_t PcdErr;
+
+	//	printf("CMD %02x\n",pIn[0]);
 	switch (Command)
 	{
 	case PCD_AUTHENT:
@@ -296,7 +327,7 @@ char PcdComMF522(uint8_t   Command,
 	}
 
 	WriteRawRC(ComIEnReg,irqEn|0x80);
-//	WriteRawRC(ComIEnReg,irqEn);
+	//	WriteRawRC(ComIEnReg,irqEn);
 	ClearBitMask(ComIrqReg,0x80);
 	SetBitMask(FIFOLevelReg,0x80);
 	WriteRawRC(CommandReg,PCD_IDLE);
@@ -316,7 +347,7 @@ char PcdComMF522(uint8_t   Command,
 	do
 	{
 		usleep(200);
-//		bcm2835_delayMicroseconds(200);
+		//		bcm2835_delayMicroseconds(200);
 		n = ReadRawRC(ComIrqReg);
 		i--;
 	}
@@ -326,7 +357,8 @@ char PcdComMF522(uint8_t   Command,
 
 	if (i!=0)
 	{
-		if(!(ReadRawRC(ErrorReg)&0x1B))
+		PcdErr=ReadRawRC(ErrorReg);
+		if (!(PcdErr & 0x11))
 		{
 			status = TAG_OK;
 			if (n & irqEn & 0x01) {status = TAG_NOTAG;}
@@ -341,17 +373,27 @@ char PcdComMF522(uint8_t   Command,
 
 				for (i=0; i<n; i++) {
 					pOut [i] = ReadRawRC(FIFODataReg);
+//					printf (".%02X ",pOut[i]);
 				}
 			}
 		}
-		else {status = TAG_ERR;}
+		else {
+			//			fprintf (stderr,"Err %02x\n",PcdErr);
+			status = TAG_ERR;}
+
+		if (PcdErr&0x08) {
+			fprintf (stderr,"COllision \n");
+			status = TAG_COLLISION;
+
+		}
 
 	}
 
 
 	//    SetBitMask(ControlReg,0x80);           // stop timer now
 	//    WriteRawRC(CommandReg,PCD_IDLE); ???????
-			return status;
+//	printf ("PCD Err %02x\n",PcdErr);
+	return status;
 }
 
 void PcdAntennaOn(void)
@@ -367,11 +409,4 @@ void PcdAntennaOn(void)
 void PcdAntennaOff(void)
 {
 	ClearBitMask(TxControlReg, 0x03);
-}
-
-uint8_t PcdGetMode(void) {
-	uint8_t reg;
-	reg= ReadRawRC(ModeReg);
-	printf("DD %02x\n",reg);
-	return reg;
 }
