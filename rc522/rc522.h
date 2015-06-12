@@ -94,7 +94,7 @@
 typedef char tag_stat;
 
 
-void InitRc522(void);
+void InitRc522(const char *spidev);
 void ClearBitMask(uint8_t   reg,uint8_t   mask);
 void WriteRawRC(uint8_t   Address, uint8_t   value);
 void SetBitMask(uint8_t   reg,uint8_t   mask);

@@ -1,15 +1,22 @@
-
 #include <string.h>
 #include <stdio.h>
+#include <stdlib.h>
 #include <unistd.h>
-#include "bcm2835.h"
+#include <fcntl.h>
+#include <sys/ioctl.h>
+#include <linux/types.h>
+#include <linux/spi/spidev.h>
 #include "rc522.h"
 #include "main.h"
 
-void InitRc522(void)
+static int fd;
+
+void InitRc522(const char* spidev)
 {
-	PcdReset();
-	PcdAntennaOn();
+    fd = open(spidev, O_RDWR);
+    if (fd < 0) exit(EXIT_FAILURE);
+    PcdReset();
+    PcdAntennaOn();
 }
 
 char PcdRequest(uint8_t req_code,uint8_t *pTagType)
@@ -267,11 +274,20 @@ char M500PcdConfigISOType(uint8_t   type)
 }
  */
 
+int spi_xfer(int fd, char *buf, int len) {
+    struct spi_ioc_transfer xfer = {0};
+    xfer.tx_buf = (unsigned long) buf;
+    xfer.rx_buf = (unsigned long) buf;
+    xfer.len = len;
+
+    return ioctl(fd, SPI_IOC_MESSAGE(1), &xfer);
+}
+
 uint8_t ReadRawRC(uint8_t Address)
 {
 	char buff[2];
 	buff[0] = ((Address<<1)&0x7E)|0x80;
-	bcm2835_spi_transfern(buff,2);
+        spi_xfer(fd, buff, 2);
 	return (uint8_t)buff[1];
 }
 
@@ -281,7 +297,7 @@ void WriteRawRC(uint8_t Address, uint8_t value)
 
 	buff[0] = (char)((Address<<1)&0x7E);
 	buff[1] = (char)value;
-	bcm2835_spi_transfern(buff,2);
+        spi_xfer(fd, buff, 2);
 }
 
 void SetBitMask(uint8_t   reg,uint8_t   mask)
