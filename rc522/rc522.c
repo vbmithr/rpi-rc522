@@ -399,7 +399,7 @@ char PcdComMF522(uint8_t   Command,
 			status = TAG_ERR;}
 
 		if (PcdErr&0x08) {
-			if (debug) fprintf (stderr,"COllision \n");
+			/* if (debug) fprintf (stderr,"COllision \n"); */
 			status = TAG_COLLISION;
 
 		}

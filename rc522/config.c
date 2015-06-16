@@ -7,7 +7,7 @@
 
 #include "config.h"
 
-char config_file[255]="/etc/RC522.conf";
+char config_file[255]="RC522.conf";
 FILE *fdconfig=NULL;
 char str[255];
 

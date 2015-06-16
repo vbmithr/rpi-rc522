@@ -11,7 +11,7 @@
 uint8_t buff[MAXRLEN];
 
 
-tag_stat find_tag(uint16_t * card_type) {
+tag_stat find_tag(uint16_t* card_type) {
 	tag_stat tmp;
 	if ((tmp=PcdRequest(PICC_REQIDL,buff))==TAG_OK) {
 		*card_type=(int)(buff[0]<<8|buff[1]);
