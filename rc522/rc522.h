@@ -93,26 +93,33 @@
 #define 	TAG_COLLISION             (4)
 typedef char tag_stat;
 
+int InitRc522(const char *spidev);
 
-void InitRc522(const char *spidev);
-void ClearBitMask(uint8_t   reg,uint8_t   mask);
-void WriteRawRC(uint8_t   Address, uint8_t   value);
-void SetBitMask(uint8_t   reg,uint8_t   mask);
-char PcdComMF522(uint8_t   Command,
+int SetBitMask(int fd, uint8_t   reg,uint8_t   mask);
+int ClearBitMask(int fd, uint8_t   reg,uint8_t   mask);
+
+int ReadRawRC(int fd, uint8_t *dst, uint8_t addr);
+int WriteRawRC(int fd, uint8_t addr, uint8_t value);
+
+char PcdComMF522(int fd,
+                 uint8_t   Command,
                  uint8_t *pIn ,
                  uint8_t   InLenByte,
                  uint8_t *pOut ,
                  uint8_t  *pOutLenBit);
-void CalulateCRC(uint8_t *pIn ,uint8_t   len,uint8_t *pOut );
-uint8_t ReadRawRC(uint8_t   Address);
-char PcdReset(void);
-char PcdRequest(unsigned char req_code,unsigned char *pTagType);
-void PcdAntennaOn(void);
-void PcdAntennaOff(void);
+void CalulateCRC(int fd, uint8_t *pIn ,uint8_t   len,uint8_t *pOut );
+char PcdReset(int fd);
+char PcdRequest(int fd, unsigned char req_code,unsigned char *pTagType);
+void PcdAntennaOn(int fd);
+void PcdAntennaOff(int fd);
 //char M500PcdConfigISOType(unsigned char type);
-char PcdAnticoll(uint8_t , uint8_t *);
-char PcdSelect(uint8_t , uint8_t *);
-char PcdAuthState(unsigned char auth_mode,unsigned char addr,unsigned char *pKey,unsigned char *pSnr);
-char PcdWrite(unsigned char addr,unsigned char *pData);
-char PcdRead(unsigned char addr,unsigned char *pData);
-char PcdHalt(void);
+char PcdAnticoll(int fd, uint8_t , uint8_t *);
+char PcdSelect(int fd, uint8_t , uint8_t *);
+char PcdAuthState(int fd,
+                  unsigned char auth_mode,
+                  unsigned char addr,
+                  unsigned char *pKey,
+                  unsigned char *pSnr);
+char PcdWrite(int fd, unsigned char addr,unsigned char *pData);
+char PcdRead(int fd, unsigned char addr,unsigned char *pData);
+char PcdHalt(int fd);

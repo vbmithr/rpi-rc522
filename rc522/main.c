@@ -18,10 +18,11 @@ sqlite3 *db;
 
 int establish_tcp_server() {
     struct addrinfo hints, *res;
-    int sockfd, new_fd;
+    int sockfd;
+    /* int new_fd; */
 
-    struct sockaddr_storage their_addr;
-    socklen_t addr_size;
+    /* struct sockaddr_storage their_addr; */
+    /* socklen_t addr_size; */
 
     memset(&hints, 0, sizeof hints);
     hints.ai_family = AF_UNSPEC;  // use IPv4 or IPv6, whichever
@@ -33,8 +34,8 @@ int establish_tcp_server() {
     bind(sockfd, res->ai_addr, res->ai_addrlen);
     listen(sockfd, BACKLOG);
 
-    addr_size = sizeof their_addr;
-    new_fd = accept(sockfd, (struct sockaddr *)&their_addr, &addr_size);
+    /* addr_size = sizeof their_addr; */
+    /* new_fd = accept(sockfd, (struct sockaddr *)&their_addr, &addr_size); */
 
     return 0;
 }
@@ -66,10 +67,10 @@ int main (int argc, char *argv[]) {
         return EXIT_FAILURE;
     }
 
-    InitRc522 ("/dev/spidev1.0");
+    int fd = InitRc522 ("/dev/spidev1.0");
 
     for (;;) {
-        status = find_tag (&CType);
+        status = find_tag (fd, &CType);
         if (status == TAG_NOTAG) {
             usleep (200000);
             continue;
@@ -77,7 +78,7 @@ int main (int argc, char *argv[]) {
         else if ((status != TAG_OK) && (status != TAG_COLLISION))
             continue;
 
-        if (select_tag_sn (SN, &SN_len) != TAG_OK)
+        if (select_tag_sn (fd, SN, &SN_len) != TAG_OK)
             continue;
 
         p = sn_str;
@@ -99,6 +100,6 @@ int main (int argc, char *argv[]) {
         if (debug)
             fprintf (stderr, "New tag: type=%04x SNlen=%d SN=%s\n", CType, SN_len, sn_str);
     }
-    PcdHalt ();
+    PcdHalt (fd);
     return EXIT_SUCCESS;
 }
