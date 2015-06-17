@@ -7,5 +7,6 @@ create table accesses (
 create table keys (
        uid varchar(12) primary key,
        privkey varchar(128),
-       secret varchar(128)
+       secret varchar(128),
+       accessid int
        );
