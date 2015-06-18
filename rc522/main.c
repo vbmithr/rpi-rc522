@@ -294,6 +294,11 @@ void* rfid_t(void *arg) {
 
     int fd = InitRc522 ("/dev/spidev1.0");
 
+    if (fd == -1) {
+        fprintf(stderr, "Unable to initialize RFID, exiting thread.\n");
+        pthread_exit(NULL);
+    }
+
     for (;;) {
         status = find_tag (fd, &CType);
         if (status == TAG_NOTAG) {
@@ -354,9 +359,12 @@ int main (int argc, char *argv[]) {
         return EXIT_FAILURE;
     }
 
-    pthread_t srv_id, hello_id;
+    pthread_t srv_id, hello_id, rfid_id;
     /* Launch the server. */
     pthread_create(&srv_id, NULL, server_t, NULL);
+
+    /* Launch the RFID reader thread */
+    pthread_create(&rfid_id, NULL, rfid_t, NULL);
 
     /* Launch mcast hello */
     pthread_create(&hello_id, NULL, hello_t, (void*) &period);
