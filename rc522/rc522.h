@@ -93,7 +93,7 @@
 #define 	TAG_COLLISION             (4)
 typedef char tag_stat;
 
-int InitRc522(const char *spidev);
+int InitRc522(const char *i2cdev, int addr);
 
 int SetBitMask(int fd, uint8_t   reg,uint8_t   mask);
 int ClearBitMask(int fd, uint8_t   reg,uint8_t   mask);

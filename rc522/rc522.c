@@ -5,19 +5,27 @@
 #include <fcntl.h>
 #include <sys/ioctl.h>
 #include <linux/types.h>
-#include <linux/spi/spidev.h>
+#include <linux/i2c-dev.h>
 #include "rc522.h"
 #include "main.h"
 
 static int fd;
 
-int InitRc522(const char* spidev)
+int InitRc522(const char* i2cdev, int addr)
 {
-    fd = open(spidev, O_RDWR);
+    int ret;
+    int fd = open(i2cdev, O_RDWR);
 
     if (fd == -1) {
         perror("InitRC522");
         return -1;
+    }
+
+    ret = ioctl(fd, I2C_SLAVE, addr);
+    if (ret < 0) {
+        /* ERROR HANDLING; you can check errno to see what went wrong */
+        perror("InitRC522");
+        return ret;
     }
 
     PcdReset(fd);
@@ -283,22 +291,13 @@ char M500PcdConfigISOType(uint8_t   type)
 }
  */
 
-int spi_xfer(int fd, uint8_t *buf, int len) {
-    struct spi_ioc_transfer xfer = {0};
-    xfer.tx_buf = (unsigned long) buf;
-    xfer.rx_buf = (unsigned long) buf;
-    xfer.len = len;
-
-    return ioctl(fd, SPI_IOC_MESSAGE(1), &xfer);
-}
-
 int ReadRawRC(int fd, uint8_t *dst, uint8_t addr)
 {
     int ret;
-    uint8_t buf[2];
-    buf[0] = ((addr << 1) & 0x7E) | 0x80;
-    ret = spi_xfer(fd, buf, 2);
-    *dst = buf[1];
+    ret = write(fd, &addr, 1);
+    if (ret == -1) return ret;
+
+    ret = read(fd, dst, 1);
     return ret;
 }
 
@@ -306,9 +305,9 @@ int WriteRawRC(int fd, uint8_t addr, uint8_t value)
 {
     uint8_t buf[2];
 
-	buf[0] = (addr << 1) & 0x7E;
-	buf[1] = value;
-        return spi_xfer(fd, buf, 2);
+    buf[0] = addr;
+    buf[1] = value;
+    return write(fd, buf, 2);
 }
 
 int SetBitMask(int fd, uint8_t   reg,uint8_t   mask)

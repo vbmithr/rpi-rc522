@@ -287,12 +287,13 @@ void* rfid_t(void *arg) {
     uint8_t SN_len;
 
     uint16_t CType = 0;
+    int i2caddr = *((int*)(arg));
     char status;
 
     char *p;
     char sn_str[23];
 
-    int fd = InitRc522 ("/dev/spidev1.0");
+    int fd = InitRc522 ("/dev/i2c-0", i2caddr);
 
     if (fd == -1) {
         fprintf(stderr, "Unable to initialize RFID, exiting thread.\n");
@@ -335,18 +336,22 @@ void* rfid_t(void *arg) {
 int main (int argc, char *argv[]) {
     int ret;
     int period = 5;
+    int i2caddr = 0x30;
 
     /* Generate random uuid */
     uuid_generate(uuid);
 
     /* Parse cmdline arguments */
-    while ((ret = getopt (argc, argv, "dp:")) != -1) {
+    while ((ret = getopt (argc, argv, "dpi:")) != -1) {
         switch (ret) {
         case 'd':
             debug = 1;
             break;
         case 'p':
             period = atoi(optarg);
+            break;
+        case 'i':
+            i2caddr = atoi(optarg);
             break;
         }
     }
@@ -364,7 +369,7 @@ int main (int argc, char *argv[]) {
     pthread_create(&srv_id, NULL, server_t, NULL);
 
     /* Launch the RFID reader thread */
-    pthread_create(&rfid_id, NULL, rfid_t, NULL);
+    pthread_create(&rfid_id, NULL, rfid_t, &i2caddr);
 
     /* Launch mcast hello */
     pthread_create(&hello_id, NULL, hello_t, (void*) &period);
