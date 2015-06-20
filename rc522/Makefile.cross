@@ -4,7 +4,7 @@ TARGET_DIR=/home/vb/code/openwrt/staging_dir/target-mips_34kc_musl-1.1.10
 
 CFLAGS=-std=gnu11 -g -ggdb -D_GNU_SOURCE -Wall -Wno-unused-variable -Wno-unused-but-set-variable `pkg-config --cflags uuid` -I$(TARGET_DIR)/include -I$(TARGET_DIR)/usr/include
 LDFLAGS=-pthread `pkg-config --libs uuid` `pkg-config --libs sqlite3` -L$(TARGET_DIR)/lib -L$(TARGET_DIR)/usr/lib
-PROGS=main valet-rfidd
+PROGS=main valet-rfidd i2c-test
 
 all: $(PROGS)
 

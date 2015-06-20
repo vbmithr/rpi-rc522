@@ -336,7 +336,7 @@ void* rfid_t(void *arg) {
 int main (int argc, char *argv[]) {
     int ret;
     int period = 5;
-    int i2caddr = 0x30;
+    int i2caddr = 0x28;
 
     /* Generate random uuid */
     uuid_generate(uuid);
