@@ -248,7 +248,6 @@ void* hello_t(void* arg) {
     int period = *((int *)arg);
     struct sockaddr_in6 mcast_saddr = {0};
     struct sockaddr_in6 mysaddr;
-    uint16_t msg = htons(0), size = htons(sizeof(struct sockaddr_in6) + sizeof(uuid_t));
     char buf[1024] = {0};
 
     sock = socket(AF_INET6, SOCK_DGRAM, 0);
@@ -265,15 +264,30 @@ void* hello_t(void* arg) {
 
     mcast_saddr.sin6_family = AF_INET6;
     mcast_saddr.sin6_port = htons(mcast_port);
-    inet_pton(AF_INET6, mcast_addr, &(mcast_saddr.sin6_addr));
+    inet_pton(AF_INET6, mcast_addr, &mcast_saddr.sin6_addr);
 
-    memcpy(buf, &msg, 2);
-    memcpy(buf+2, &size, 2);
+    int loop = 1;
+    ret = setsockopt(sock, IPPROTO_IPV6, IPV6_MULTICAST_LOOP, &loop, sizeof(int));
+    if (ret == -1) {
+        perror("setsockopt");
+        exit(EXIT_FAILURE);
+    }
+
+    int size = sizeof(struct sockaddr_in6) + sizeof(uuid_t);
+    uint16_t msg16 = htons(0);
+    uint16_t size16 = htons(size);
+
+    memcpy(buf, &msg16, 2);
+    memcpy(buf+2, &size16, 2);
     memcpy(buf+4, uuid, 16);
     memcpy(buf+20, &mysaddr, sizeof(struct sockaddr_in6));
 
     while (1) {
-        sendto(sock, buf, size+4, MSG_EOR, (const struct sockaddr*) &mcast_addr, size);
+        ret = sendto(sock, buf, size+4, MSG_EOR,
+                     (const struct sockaddr*) &mcast_saddr,
+                     sizeof(struct sockaddr_in6));
+        if (ret == -1)
+            perror("sendto");
         sleep(period);
     }
 
@@ -375,8 +389,8 @@ int main (int argc, char *argv[]) {
     pthread_create(&hello_id, NULL, hello_t, (void*) &period);
 
     /* Wait for the server to finish */
-    void* srv_ret;
-    pthread_join(srv_id, &srv_ret);
+    void* th_ret;
+    pthread_join(hello_id, &th_ret);
 
     /* Exit in presence of threads. */
     pthread_exit(NULL);
