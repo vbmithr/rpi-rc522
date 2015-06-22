@@ -1,12 +1,12 @@
-create table accesses (
-       id int primary key,
-       descr varchar(100),
-       condition varchar(100)
-       );
+create table if not exists accesses (
+       id integer primary key,
+       descr text,
+       cond blob
+);
 
-create table keys (
-       uid varchar(12) primary key,
-       privkey varchar(128),
-       secret varchar(128),
-       accessid int
-       );
+create table if not exists keys (
+       uid integer primary key,
+       accessid integer,
+       privkey blob,
+       secret blob
+);
