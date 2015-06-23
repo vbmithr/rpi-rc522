@@ -5,8 +5,8 @@ create table if not exists accesses (
 );
 
 create table if not exists keys (
-       uid integer primary key,
-       accessid integer,
+       uid integer,
+       access_id integer,
        privkey blob,
        secret blob
 );

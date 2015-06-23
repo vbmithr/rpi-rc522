@@ -11,18 +11,20 @@
 #include <uuid.h>
 #include <sqlite3.h>
 #include <pthread.h>
-#include <b64.h>
+#include <assert.h>
 
+#include "base64.h"
 #include "rfid.h"
 #include "config.h"
 
 /* Config */
 
 int backlog = 10;
-int tcp_port = 3490;
+int tcp_port;
 const char* service = "3490";
 const char* mcast_addr = "ff05::76:616c:6574";
 int mcast_port = 5522;
+int period = 1;
 uuid_t uuid;
 
 int debug = 0;
@@ -33,10 +35,10 @@ pthread_mutex_t db_lock;
 enum msg_ctos {
     ListAccess,
     AddAccess,
-    RemoveAccess,
+    DelAccess,
     ListKeys,
     AddKey,
-    RemoveKey
+    DelKey
 };
 
 enum msg_stoc {
@@ -57,7 +59,7 @@ struct access {
 };
 
 struct key {
-    uint32_t access_id;
+    uint64_t access_id;
     uint64_t uid; // max 7 bytes
     uint8_t key[12]; // two classic keys
     uint8_t secret[48]; // max size of secret
@@ -68,21 +70,89 @@ struct client {
     struct sockaddr_in6 saddr;
 };
 
-int row_cb(void *arg, int argc, char** argv, char** colName) {
+int key_row_cb(void* arg, int argc, char** argv, char** colName) {
     int fd = *((int*)arg);
     char buf[1024] = {0};
+    uint8_t b64decode[1024];
+    size_t dlen = 1024;
     int ret;
 
     // buf+0 = CmdOk
-    *((uint16_t *)buf+1) = htons(sizeof(struct access));
+    *((uint16_t *)buf+1) = htons(76);
+
+    *((uint64_t *)&buf[4]) = atoi(argv[1]); // access_id, cf SQL schema
+    *((uint64_t *)&buf[12]) = atoll(argv[0]);
+
+    ret = base64_decode(b64decode, &dlen, (unsigned char*) argv[2], strlen(argv[2]));
+    if (ret != 0) {
+        fprintf(stderr, "base64_decode error, exiting.\n");
+        exit(EXIT_FAILURE);
+    }
+    memcpy(buf+20, b64decode, dlen);
+
+    ret = base64_decode(b64decode, &dlen, (unsigned char*) argv[2], strlen(argv[2]));
+    if (ret != 0) {
+        fprintf(stderr, "base64_decode error, exiting.\n");
+        exit(EXIT_FAILURE);
+    }
+    memcpy(buf+20+12, b64decode, dlen);
+
+    ret = send(fd, buf, 4+16+12+48, 0);
+    if (ret == -1)
+        perror("send");
+
+    if (ret == 4+16+12+48) return SQLITE_OK;
+    else return ret;
+}
+
+int list_keys(int fd, int access_id) {
+    char sql[1024];
+    char *errmsg;
+    int ret;
+
+    snprintf(sql, 1024, "select * from keys where access_id is %d", access_id);
+
+    pthread_mutex_lock(&db_lock);
+    ret = sqlite3_exec(db, sql, key_row_cb, &fd, &errmsg);
+    if (ret != SQLITE_OK) {
+        fprintf(stderr, "%s\n", errmsg);
+        sqlite3_free(errmsg);
+    }
+    pthread_mutex_unlock(&db_lock);
+
+    // Send an EOT message to signal the end of transmission
+    *((uint16_t *)sql) = htons(CmdEOT);
+    *((uint16_t *)sql+1) = htons(0);
+    ret = send(fd, sql, 4, 0);
+
+    return ret;
+}
+
+int access_row_cb(void* arg, int argc, char** argv, char** colName) {
+    int fd = *((int*)arg);
+    char buf[1024] = {0};
+    uint8_t b64decode[1024];
+    size_t dlen = 1024;
+    int ret;
+
+    if (argv[2] == NULL) {
+        fprintf(stderr, "Corrupted record %d\n", argc);
+        return SQLITE_OK;
+    }
+
+    // buf+0 = CmdOk
+    *((uint16_t *)buf+1) = htons(260);
     *((uint32_t *)buf+1) = atoi(argv[0]);
 
     strncpy(buf+8, argv[1], 128);
     fprintf(stderr, "get %s, %s\n", argv[1], argv[2]);
 
-    uint8_t *decoded = b64_decode(argv[2], strlen(argv[2]));
-    memcpy(buf+8+128, decoded, 128);
-    free(decoded);
+    ret = base64_decode(b64decode, &dlen, (unsigned char*) argv[2], strlen(argv[2]));
+    if (ret != 0) {
+        fprintf(stderr, "base64_decode error, exiting.\n");
+        exit(EXIT_FAILURE);
+    }
+    memcpy(buf+8+128, b64decode, dlen);
 
     ret = send(fd, buf, 4+4+128+128, 0);
     if (ret == -1)
@@ -92,7 +162,7 @@ int row_cb(void *arg, int argc, char** argv, char** colName) {
     else return ret;
 }
 
-int list_access(int fd) {
+int list_accesses(int fd) {
     char sql[1024];
     char *errmsg;
     int ret;
@@ -100,7 +170,7 @@ int list_access(int fd) {
     snprintf(sql, 1024, "select * from accesses");
 
     pthread_mutex_lock(&db_lock);
-    ret = sqlite3_exec(db, sql, row_cb, &fd, &errmsg);
+    ret = sqlite3_exec(db, sql, access_row_cb, &fd, &errmsg);
     if (ret != SQLITE_OK) {
         fprintf(stderr, "%s\n", errmsg);
         sqlite3_free(errmsg);
@@ -110,22 +180,32 @@ int list_access(int fd) {
     // Send an EOT message to signal the end of transmission
     char buf[4];
     *((uint16_t *)buf) = htons(CmdEOT);
-    *((uint16_t *)buf+2) = htons(0);
+    *((uint16_t *)buf+1) = htons(0);
     ret = send(fd, buf, 4, 0);
 
     return ret;
 }
 
-int add_access(int fd, struct access a) {
+int add_access(int fd, struct access* a) {
     char sql[1024];
+    uint8_t b64cond[1024] = {0};
+    size_t dlen = 1024;
     char *errmsg;
     int ret;
 
-    char *b64cond = b64_encode(a.cond, 128);
+    ret = base64_encode(b64cond, &dlen, a->cond, 128);
+    if (ret != 0) {
+        switch(ret) {
+        case POLARSSL_ERR_BASE64_BUFFER_TOO_SMALL:
+            fprintf(stderr, "base64_encode buffer too small, exiting.\n");
+            break;
+        }
+        exit(EXIT_FAILURE);
+    }
+
     snprintf(sql, 1024, "insert or replace into accesses (descr,cond) values ('%s','%s')",
-             a.descr, b64cond);
+             a->descr, b64cond);
     fprintf(stderr, "%s\n", sql);
-    free(b64cond);
 
     pthread_mutex_lock(&db_lock);
     ret = sqlite3_exec(db, sql, NULL, NULL, &errmsg);
@@ -148,7 +228,7 @@ int add_access(int fd, struct access a) {
     return ret;
 }
 
-int remove_access(int fd, int id) {
+int delete_access(int fd, int id) {
     char sql[1024];
     char *errmsg;
     int ret;
@@ -175,41 +255,88 @@ int remove_access(int fd, int id) {
     return ret;
 }
 
-int add_key(struct key k) {
+int add_key(int fd, struct key* k) {
     char sql[1024];
+    uint8_t key[1024] = {0};
+    uint8_t secret[1024] = {0};
+    size_t dlen = 1024;
+
     char *errmsg;
     int ret;
 
-    snprintf(sql, 1024, "insert or replace into keys values (%ld, %s, %s, %d)",
-             k.uid, k.key, k.secret, k.access_id);
+    ret = base64_encode(key, &dlen, k->key, 12);
+    fprintf(stderr, "key: %s\n", key);
+    if (ret != 0) {
+        switch(ret) {
+        case POLARSSL_ERR_BASE64_BUFFER_TOO_SMALL:
+            fprintf(stderr, "base64_encode buffer too small, exiting.\n");
+            break;
+        }
+        exit(EXIT_FAILURE);
+    }
+
+    dlen = 1024;
+    ret = base64_encode(secret, &dlen, k->secret, 48);
+    fprintf(stderr, "secret: %s\n", secret);
+    if (ret != 0) {
+        switch(ret) {
+        case POLARSSL_ERR_BASE64_BUFFER_TOO_SMALL:
+            fprintf(stderr, "base64_encode buffer too small, exiting.\n");
+            break;
+        }
+        exit(EXIT_FAILURE);
+    }
+
+    snprintf(sql, 1024, "insert or replace into keys values (%ld, %ld, '%s', '%s')",
+             k->uid, k->access_id, key, secret);
 
     pthread_mutex_lock(&db_lock);
     ret = sqlite3_exec(db, sql, NULL, NULL, &errmsg);
-    if (ret == SQLITE_ABORT)
+    if (ret != SQLITE_OK && errmsg != NULL) {
         fprintf(stderr, "%s\n", errmsg);
+        sqlite3_free(errmsg);
+    }
     pthread_mutex_unlock(&db_lock);
+
+    // Reusing now useless sql buf
+    if (ret == SQLITE_OK)
+        *((uint16_t *)sql) = htons(CmdOK);
+    else
+        *((uint16_t *)sql) = htons(CmdNOK);
+
+    *((uint16_t *)sql+1) = htons(0);
+    send(fd, sql, 4, 0);
 
     return ret;
 }
 
-int remove_key(char* uid) {
+int delete_key(int fd, struct key* k) {
     char sql[1024];
+
     char *errmsg;
     int ret;
 
-    snprintf(sql, 1024, "delete from keys where uid is %s", uid);
+    snprintf(sql, 1024, "delete from keys where uid = %ld and access_id = %ld",
+             k->uid, k->access_id);
 
     pthread_mutex_lock(&db_lock);
     ret = sqlite3_exec(db, sql, NULL, NULL, &errmsg);
-    if (ret == SQLITE_ABORT)
+    if (ret != SQLITE_OK && errmsg != NULL) {
         fprintf(stderr, "%s\n", errmsg);
+        sqlite3_free(errmsg);
+    }
     pthread_mutex_unlock(&db_lock);
 
-    return ret;
-}
+    // Reusing now useless sql buf
+    if (ret == SQLITE_OK)
+        *((uint16_t *)sql) = htons(CmdOK);
+    else
+        *((uint16_t *)sql) = htons(CmdNOK);
 
-int chk_access(int uid) {
-    return 0;
+    *((uint16_t *)sql+1) = htons(0);
+    send(fd, sql, 4, 0);
+
+    return ret;
 }
 
 void* client_fun_t(void* arg) {
@@ -230,71 +357,50 @@ void* client_fun_t(void* arg) {
     size = ntohs(*(p+1));
     fprintf(stderr, "Read new message kind %d, size %d\n", msg, size);
 
-    struct access a;
-    struct key k;
+    struct access a = {0};
+    struct key k = {0};
     int id;
 
     switch (msg) {
     case ListAccess:
         fprintf(stderr, "ListAccess\n");
-        ret = list_access(fd);
+        ret = list_accesses(fd);
         break;
     case AddAccess:
         ret = read(fd, &a, size);
         fprintf(stderr, "Read %d bytes.\n", ret);
         fprintf(stderr, "AddAccess\n");
-        ret = add_access(fd, a);
+        ret = add_access(fd, &a);
         break;
-    case RemoveAccess:
+    case DelAccess:
         read(fd, &id, size);
         fprintf(stderr, "Read %d bytes.\n", ret);
-        fprintf(stderr, "RemoveAccess %d\n", id);
-        remove_access(fd, id);
+        fprintf(stderr, "DelAccess %d\n", id);
+        delete_access(fd, id);
+        break;
+    case ListKeys:
+        ret = read(fd, &id, size);
+        fprintf(stderr, "Read %d bytes.\n", ret);
+        fprintf(stderr, "ListKeys %d\n", id);
+        list_keys(fd, id);
         break;
     case AddKey:
-        read(fd, &k, size);
-        fprintf(stderr, "AddKey %lx\n", k.uid);
-        add_key(k);
+        ret = read(fd, &k, size);
+        fprintf(stderr, "Read %d bytes.\n", ret);
+        fprintf(stderr, "AddKey uid=0x%lx access_id=%ld\n", k.uid, k.access_id);
+        add_key(fd, &k);
         break;
-    case RemoveKey:
-        read(fd, buf, size);
-        fprintf(stderr, "RemoveKey %lx\n", k.uid);
-        remove_key(buf);
+    case DelKey:
+        ret = read(fd, &k, size);
+        fprintf(stderr, "Read %d bytes.\n", ret);
+        fprintf(stderr, "DelKey uid=0x%lx access_id=%ld\n", k.uid, k.access_id);
+        delete_key(fd, &k);
         break;
     }
 
     close(fd);
     free(arg);
     return NULL;
-}
-
-void* server_t(void *arg) {
-    struct addrinfo hints, *res;
-    int sockfd;
-    int new_fd;
-
-    socklen_t addr_size;
-
-    memset(&hints, 0, sizeof hints);
-    hints.ai_family = AF_INET6;
-    hints.ai_socktype = SOCK_STREAM;
-    hints.ai_flags = AI_PASSIVE | AI_V4MAPPED | AI_ALL;
-
-    getaddrinfo(NULL, service, &hints, &res);
-    sockfd = socket(res->ai_family, res->ai_socktype, res->ai_protocol);
-    bind(sockfd, res->ai_addr, res->ai_addrlen);
-    listen(sockfd, backlog);
-
-    addr_size = sizeof (struct sockaddr_in6);
-    struct client *p;
-    pthread_t tid;
-
-    while(1) {
-        p = malloc(sizeof(struct client));
-        new_fd = accept(sockfd, (struct sockaddr *)&p->saddr, &addr_size);
-        p->fd = new_fd;
-        pthread_create(&tid, NULL, client_fun_t, (void*) p);
-    }
 }
 
 /* Find a suitable IP for communication with the rest of the world */
@@ -357,7 +463,7 @@ void* hello_t(void* arg) {
         fprintf(stderr, "hello_t is unable to get one valid IPv6 address.\n");
         exit(EXIT_FAILURE);
     }
-    mysaddr.sin6_port = htons(tcp_port);
+    mysaddr.sin6_port = tcp_port;
 
     mcast_saddr.sin6_family = AF_INET6;
     mcast_saddr.sin6_port = htons(mcast_port);
@@ -391,6 +497,53 @@ void* hello_t(void* arg) {
     return NULL;
 }
 
+void* server_t(void *arg) {
+    struct addrinfo hints, *res;
+    int sockfd;
+    int new_fd;
+    int ret;
+    socklen_t addr_size;
+
+    memset(&hints, 0, sizeof hints);
+    hints.ai_family = AF_INET6;
+    hints.ai_socktype = SOCK_STREAM;
+    hints.ai_flags = AI_PASSIVE | AI_V4MAPPED | AI_ALL;
+
+    ret = getaddrinfo(NULL, service, &hints, &res);
+    if (ret != 0) {
+        perror("getaddrinfo");
+        exit(EXIT_FAILURE);
+    }
+    sockfd = socket(res->ai_family, res->ai_socktype, res->ai_protocol);
+    ret = setsockopt(sockfd, SOL_SOCKET, SO_REUSEADDR, &(int){ 1 }, sizeof(int));
+    if (ret != 0) {
+        perror("setsockopt");
+        exit(EXIT_FAILURE);
+    }
+    ret = bind(sockfd, res->ai_addr, res->ai_addrlen);
+    if (ret != 0) {
+        perror("bind");
+        exit(EXIT_FAILURE);
+    }
+    listen(sockfd, backlog);
+
+    /* Set actual tcp_port and launch mcast hello. */
+    pthread_t hello_id;
+    tcp_port = ((struct sockaddr_in6*)res->ai_addr)->sin6_port;
+    pthread_create(&hello_id, NULL, hello_t, (void*) &period);
+
+    addr_size = sizeof (struct sockaddr_in6);
+    struct client *p;
+    pthread_t tid;
+
+    while(1) {
+        p = malloc(sizeof(struct client));
+        new_fd = accept(sockfd, (struct sockaddr *)&p->saddr, &addr_size);
+        p->fd = new_fd;
+        pthread_create(&tid, NULL, client_fun_t, (void*) p);
+    }
+}
+
 /* Loop reading RFIDs and wake up listeners when reading is
    successful. */
 void* rfid_t(void *arg) {
@@ -408,7 +561,7 @@ void* rfid_t(void *arg) {
 
     if (fd == -1) {
         fprintf(stderr, "Unable to initialize RFID, exiting thread.\n");
-        pthread_exit(NULL);
+        return NULL;
     }
 
     for (;;) {
@@ -446,7 +599,6 @@ void* rfid_t(void *arg) {
 
 int main (int argc, char *argv[]) {
     int ret;
-    int period = 1;
     int i2caddr = 0x28;
 
     /* Generate random uuid */
@@ -475,20 +627,17 @@ int main (int argc, char *argv[]) {
         return EXIT_FAILURE;
     }
 
-    pthread_t srv_id, hello_id, rfid_id;
+    pthread_t srv_id, rfid_id;
     /* Launch the server. */
     pthread_create(&srv_id, NULL, server_t, NULL);
 
     /* Launch the RFID reader thread */
     pthread_create(&rfid_id, NULL, rfid_t, &i2caddr);
 
-    /* Launch mcast hello */
-    pthread_create(&hello_id, NULL, hello_t, (void*) &period);
-
     /* Wait for the server to finish */
     void* th_ret;
-    pthread_join(hello_id, &th_ret);
+    pthread_join(srv_id, &th_ret);
 
     /* Exit in presence of threads. */
-    pthread_exit(NULL);
+    return NULL;
 }
