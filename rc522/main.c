@@ -531,6 +531,7 @@ void* server_t(void *arg) {
         perror("setsockopt");
         exit(EXIT_FAILURE);
     }
+    inet_pton(AF_INET6, "::", &((struct sockaddr_in6*)res->ai_addr)->sin6_addr);
     ret = bind(sockfd, res->ai_addr, res->ai_addrlen);
     if (ret != 0) {
         perror("bind");
