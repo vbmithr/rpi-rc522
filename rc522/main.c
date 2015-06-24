@@ -23,11 +23,13 @@
 /* Config */
 
 int backlog = 10;
-int tcp_port;
 const char* service = "3490";
 const char* mcast_addr = "ff05::76:616c:6574";
 int mcast_port = 5522;
-int period = 1;
+int mcast_period = 1;
+
+struct sockaddr_in6 mcast_saddr;
+
 uuid_t uuid;
 
 int debug = 0;
@@ -465,34 +467,16 @@ int find_ip(struct sockaddr_in6 *addr) {
 /* Say hello on the wire every n seconds */
 void* hello_t(void* arg) {
     int sock, ret;
-    int period = *((int *)arg);
-    struct sockaddr_in6 mcast_saddr = {0};
+    int fd = *((int *)arg);
     struct sockaddr_in6 mysaddr;
     char buf[1024] = {0};
-
-    sock = socket(AF_INET6, SOCK_DGRAM, 0);
-    if (sock == -1) {
-        perror("socket");
-        exit(EXIT_FAILURE);
-    }
 
     ret = find_ip(&mysaddr);
     if (ret != 0) {
         fprintf(stderr, "hello_t is unable to get one valid IPv6 address.\n");
         exit(EXIT_FAILURE);
     }
-    mysaddr.sin6_port = tcp_port;
-
-    mcast_saddr.sin6_family = AF_INET6;
-    mcast_saddr.sin6_port = htons(mcast_port);
-    inet_pton(AF_INET6, mcast_addr, &mcast_saddr.sin6_addr);
-
-    int loop = 1;
-    ret = setsockopt(sock, IPPROTO_IPV6, IPV6_MULTICAST_LOOP, &loop, sizeof(int));
-    if (ret == -1) {
-        perror("setsockopt");
-        exit(EXIT_FAILURE);
-    }
+    mysaddr.sin6_port = htons(atoi(service));
 
     int size = 4 /* uint32_t id */ + sizeof(uuid_t) + sizeof(struct sockaddr_in6);
 
@@ -506,12 +490,12 @@ void* hello_t(void* arg) {
     memcpy(buf+24, &mysaddr, sizeof(struct sockaddr_in6));
 
     while (1) {
-        ret = sendto(sock, buf, size+4, MSG_EOR,
+        ret = sendto(fd, buf, size+4, MSG_EOR,
                      (const struct sockaddr*) &mcast_saddr,
                      sizeof(struct sockaddr_in6));
         if (ret == -1)
             perror("sendto");
-        sleep(period);
+        sleep(mcast_period);
     }
 
     return NULL;
@@ -547,10 +531,6 @@ void* server_t(void *arg) {
     }
     listen(sockfd, backlog);
 
-    /* Set actual tcp_port and launch mcast hello. */
-    pthread_t hello_id;
-    tcp_port = ((struct sockaddr_in6*)res->ai_addr)->sin6_port;
-    pthread_create(&hello_id, NULL, hello_t, (void*) &period);
 
     addr_size = sizeof (struct sockaddr_in6);
     struct client *p;
@@ -587,23 +567,23 @@ int check_access(int fd, char* SN, size_t len) {
 
     /* Now send an event according to the value of granted (either
        unknown key or access granted) */
-
-    *((uint16_t*)sql+1) = htons(20 + len);
-    /* *((uint32_t*)sql+1) = */
-    if (granted) {
+    if (granted)
         *((uint16_t*)sql) = htons(AccessGranted);
-    }
-
-    else {
+    else
         *((uint16_t*)sql) = htons(UnknownKey);
-    }
+    *((uint16_t*)sql+1) = htons(20 + len);
+    pthread_mutex_lock(&mcast_lock);
+    *((uint32_t*)sql+1) = htonl(mcast_cnt);
+    mcast_cnt++;
+    pthread_mutex_unlock(&mcast_lock);
+    memcpy(sql+8, uuid, 16);
+    memcpy(sql+24, SN, len);
 
-    // Send an EOT message to signal the end of transmission
-    *((uint16_t *)sql) = htons(CmdEOT);
-    *((uint16_t *)sql+1) = htons(0);
-    ret = send(fd, sql, 4, 0);
+    ret = sendto(fd, sql, 24+len, MSG_EOR,
+                 (const struct sockaddr*) &mcast_saddr,
+                 sizeof(struct sockaddr_in6));
 
-    return ret;
+    return granted;
 }
 
 /* Loop reading RFIDs and wake up listeners when reading is
@@ -637,12 +617,12 @@ void* rfid_t(void *arg) {
         if (select_tag_sn (fd, SN, &SN_len) != TAG_OK)
             continue;
 
-        for (int i = 0; i < SN_len; i++) {
-            sprintf (sn_str + 2*i, "%02x", SN[i]);
-        }
+        // At this point we successfully read a uid
 
-        //for debugging
         if (debug) {
+            for (int i = 0; i < SN_len; i++) {
+                sprintf (sn_str + 2*i, "%02x", SN[i]);
+            }
             fprintf (stderr, "Type: %04x, Serial: %s\n", CType, sn_str);
             fprintf (stderr, "New tag: type=%04x SNlen=%d SN=[%s]\n", CType, SN_len, sn_str);
         }
@@ -656,6 +636,21 @@ int main (int argc, char *argv[]) {
     /* Generate random uuid */
     uuid_generate(uuid);
 
+    /* Setup mcast socket  */
+    mcast_saddr.sin6_family = AF_INET6;
+    mcast_saddr.sin6_port = htons(mcast_port);
+    inet_pton(AF_INET6, mcast_addr, &mcast_saddr.sin6_addr);
+    int mcast_fd = socket(AF_INET6, SOCK_DGRAM, 0);
+    if (mcast_fd == -1) {
+        perror("socket");
+        exit(EXIT_FAILURE);
+    }
+    ret = setsockopt(mcast_fd, IPPROTO_IPV6, IPV6_MULTICAST_LOOP, &(int){ 1 }, sizeof(int));
+    if (ret == -1) {
+        perror("setsockopt");
+        exit(EXIT_FAILURE);
+    }
+
     /* Parse cmdline arguments */
     while ((ret = getopt (argc, argv, "dpi:")) != -1) {
         switch (ret) {
@@ -663,7 +658,7 @@ int main (int argc, char *argv[]) {
             debug = 1;
             break;
         case 'p':
-            period = atoi(optarg);
+            mcast_period = atoi(optarg);
             break;
         case 'i':
             i2caddr = atoi(optarg);
@@ -679,12 +674,15 @@ int main (int argc, char *argv[]) {
         return EXIT_FAILURE;
     }
 
-    pthread_t srv_id, rfid_id;
+    pthread_t srv_id, rfid_id, hello_id;
     /* Launch the server. */
     pthread_create(&srv_id, NULL, server_t, NULL);
 
     /* Launch the RFID reader thread */
     pthread_create(&rfid_id, NULL, rfid_t, &i2caddr);
+
+    /* Launch mcast hello. */
+    pthread_create(&hello_id, NULL, hello_t, (void*) &mcast_fd);
 
     /* Wait for the server to finish */
     void* th_ret;
