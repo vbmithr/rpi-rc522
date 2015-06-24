@@ -32,6 +32,9 @@ int debug = 0;
 sqlite3 *db;
 pthread_mutex_t db_lock;
 
+uint32_t mcast_cnt = 0;
+pthread_mutex_t mcast_lock;
+
 enum msg_ctos {
     ListAccess,
     AddAccess,
@@ -476,14 +479,16 @@ void* hello_t(void* arg) {
         exit(EXIT_FAILURE);
     }
 
-    int size = sizeof(struct sockaddr_in6) + sizeof(uuid_t);
-    uint16_t msg16 = htons(0);
-    uint16_t size16 = htons(size);
+    int size = 4 /* uint32_t id */ + sizeof(uuid_t) + sizeof(struct sockaddr_in6);
 
-    memcpy(buf, &msg16, 2);
-    memcpy(buf+2, &size16, 2);
-    memcpy(buf+4, uuid, 16);
-    memcpy(buf+20, &mysaddr, sizeof(struct sockaddr_in6));
+    memcpy(buf, &(uint16_t){ htons(0) }, 2);
+    memcpy(buf+2, &(uint16_t){ htons(size) }, 2);
+    pthread_mutex_lock(&mcast_lock);
+    memcpy(buf+4, &mcast_cnt, 4);
+    mcast_cnt++;
+    pthread_mutex_unlock(&mcast_lock);
+    memcpy(buf+8, uuid, 16);
+    memcpy(buf+24, &mysaddr, sizeof(struct sockaddr_in6));
 
     while (1) {
         ret = sendto(sock, buf, size+4, MSG_EOR,
