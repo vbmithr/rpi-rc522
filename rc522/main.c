@@ -20,25 +20,31 @@
 #include "rfid.h"
 #include "config.h"
 
-/* Config */
+/* CONFIG: Misc */
 
+int mcast_period = 1; /* cmdline configurable */
 int backlog = 10;
+uuid_t uuid; /* setup by main */
+int debug = 0;
+
+/* CONFIG: Addresses and ports */
+
 const char* service = "3490";
 const char* mcast_addr = "ff05::76:616c:6574";
 int mcast_port = 5522;
-int mcast_period = 1;
+int mcast_fd; /* setup by main */
+struct sockaddr_in6 mcast_saddr; /* setup by main */
+int i2caddr = 0x28; /* cmdline configurable */
 
-struct sockaddr_in6 mcast_saddr;
-
-uuid_t uuid;
-
-int debug = 0;
+/* SHARED STATED */
 
 sqlite3 *db;
 pthread_mutex_t db_lock;
 
 uint32_t mcast_cnt = 0;
 pthread_mutex_t mcast_lock;
+
+/* Types */
 
 enum msg_ctos {
     ListAccess,
@@ -85,6 +91,8 @@ struct client {
     int fd;
     struct sockaddr_in6 saddr;
 };
+
+/* Implementation */
 
 int key_row_cb(void* arg, int argc, char** argv, char** colName) {
     int fd = *((int*)arg);
@@ -466,8 +474,7 @@ int find_ip(struct sockaddr_in6 *addr) {
 
 /* Say hello on the wire every n seconds */
 void* hello_t(void* arg) {
-    int sock, ret;
-    int fd = *((int *)arg);
+    int ret;
     struct sockaddr_in6 mysaddr;
     char buf[1024] = {0};
 
@@ -490,7 +497,7 @@ void* hello_t(void* arg) {
     memcpy(buf+24, &mysaddr, sizeof(struct sockaddr_in6));
 
     while (1) {
-        ret = sendto(fd, buf, size+4, MSG_EOR,
+        ret = sendto(mcast_fd, buf, size+4, MSG_EOR,
                      (const struct sockaddr*) &mcast_saddr,
                      sizeof(struct sockaddr_in6));
         if (ret == -1)
@@ -551,7 +558,7 @@ int check_access_row_cb(void* arg, int argc, char** argv, char** colName) {
 
 /* Check access, perform action (buzzer?) and create the appropriate
    event */
-int check_access(int fd, char* SN, size_t len) {
+int check_access(uint8_t* SN, size_t len) {
     int granted = 0, ret;
     char sql[1024] = {0};
     char* errmsg;
@@ -579,7 +586,7 @@ int check_access(int fd, char* SN, size_t len) {
     memcpy(sql+8, uuid, 16);
     memcpy(sql+24, SN, len);
 
-    ret = sendto(fd, sql, 24+len, MSG_EOR,
+    ret = sendto(mcast_fd, sql, 24+len, MSG_EOR,
                  (const struct sockaddr*) &mcast_saddr,
                  sizeof(struct sockaddr_in6));
 
@@ -593,11 +600,10 @@ void* rfid_t(void *arg) {
     uint8_t SN_len;
 
     uint16_t CType = 0;
-    int i2caddr = *((int*)(arg));
     char status;
 
     char sn_str[23] = {0};
-
+    int ret;
     int fd = InitRc522 ("/dev/i2c-0", i2caddr);
 
     if (fd == -1) {
@@ -618,6 +624,7 @@ void* rfid_t(void *arg) {
             continue;
 
         // At this point we successfully read a uid
+        ret = check_access(SN, SN_len);
 
         if (debug) {
             for (int i = 0; i < SN_len; i++) {
@@ -625,13 +632,16 @@ void* rfid_t(void *arg) {
             }
             fprintf (stderr, "Type: %04x, Serial: %s\n", CType, sn_str);
             fprintf (stderr, "New tag: type=%04x SNlen=%d SN=[%s]\n", CType, SN_len, sn_str);
+            if (ret)
+                fprintf(stderr, "Access granted!\n");
+            else
+                fprintf(stderr, "Access denied!\n");
         }
     }
 }
 
 int main (int argc, char *argv[]) {
     int ret;
-    int i2caddr = 0x28;
 
     /* Generate random uuid */
     uuid_generate(uuid);
@@ -640,7 +650,7 @@ int main (int argc, char *argv[]) {
     mcast_saddr.sin6_family = AF_INET6;
     mcast_saddr.sin6_port = htons(mcast_port);
     inet_pton(AF_INET6, mcast_addr, &mcast_saddr.sin6_addr);
-    int mcast_fd = socket(AF_INET6, SOCK_DGRAM, 0);
+    mcast_fd = socket(AF_INET6, SOCK_DGRAM, 0);
     if (mcast_fd == -1) {
         perror("socket");
         exit(EXIT_FAILURE);
@@ -679,10 +689,10 @@ int main (int argc, char *argv[]) {
     pthread_create(&srv_id, NULL, server_t, NULL);
 
     /* Launch the RFID reader thread */
-    pthread_create(&rfid_id, NULL, rfid_t, &i2caddr);
+    pthread_create(&rfid_id, NULL, rfid_t, NULL);
 
     /* Launch mcast hello. */
-    pthread_create(&hello_id, NULL, hello_t, (void*) &mcast_fd);
+    pthread_create(&hello_id, NULL, hello_t, NULL);
 
     /* Wait for the server to finish */
     void* th_ret;
