@@ -53,6 +53,14 @@ enum msg_stoc {
     CmdEOT, // End of transmission
 };
 
+enum evtkind {
+    Hello,
+    UnknownKey,
+    AuthInvalid,
+    AccessGranted,
+    AccessDenied
+};
+
 enum result {
     Ok,
     Error
@@ -86,8 +94,8 @@ int key_row_cb(void* arg, int argc, char** argv, char** colName) {
     // buf+0 = CmdOk
     *((uint16_t *)buf+1) = htons(76);
 
-    *((uint64_t *)&buf[4]) = atoi(argv[1]); // access_id, cf SQL schema
-    *((uint64_t *)&buf[12]) = atoll(argv[0]);
+    *((uint64_t *)&buf[4]) = htobe64(atoi(argv[1])); // access_id, cf SQL schema
+    *((uint64_t *)&buf[12]) = htobe64(atoll(argv[0]));
 
     ret = base64_decode(b64decode, &dlen, (unsigned char*) argv[2], strlen(argv[2]));
     if (ret != 0) {
@@ -148,7 +156,7 @@ int access_row_cb(void* arg, int argc, char** argv, char** colName) {
 
     // buf+0 = CmdOk
     *((uint16_t *)buf+1) = htons(260);
-    *((uint32_t *)buf+1) = atoi(argv[0]);
+    *((uint32_t *)buf+1) = htonl(atoi(argv[0]));
 
     strncpy(buf+8, argv[1], 128);
     fprintf(stderr, "get %s, %s\n", argv[1], argv[2]);
@@ -365,7 +373,7 @@ void* client_fun_t(void* arg) {
 
     struct access a = {0};
     struct key k = {0};
-    int id;
+    uint32_t id;
 
     switch (msg) {
     case ListAccess:
@@ -381,24 +389,28 @@ void* client_fun_t(void* arg) {
     case DelAccess:
         read(fd, &id, size);
         fprintf(stderr, "Read %d bytes.\n", ret);
-        fprintf(stderr, "DelAccess %d\n", id);
-        delete_access(fd, id);
+        fprintf(stderr, "DelAccess %d\n", ntohl(id));
+        delete_access(fd, ntohl(id));
         break;
     case ListKeys:
         ret = read(fd, &id, size);
         fprintf(stderr, "Read %d bytes.\n", ret);
-        fprintf(stderr, "ListKeys %d\n", id);
-        list_keys(fd, id);
+        fprintf(stderr, "ListKeys %d\n", ntohl(id));
+        list_keys(fd, ntohl(id));
         break;
     case AddKey:
         ret = read(fd, &k, size);
         fprintf(stderr, "Read %d bytes.\n", ret);
+        k.access_id = be64toh(k.access_id);
+        k.uid = be64toh(k.uid);
         fprintf(stderr, "AddKey uid=0x%" PRIu64 " access_id=%" PRIu64 "\n", k.uid, k.access_id);
         add_key(fd, &k);
         break;
     case DelKey:
         ret = read(fd, &k, size);
         fprintf(stderr, "Read %d bytes.\n", ret);
+        k.access_id = be64toh(k.access_id);
+        k.uid = be64toh(k.uid);
         fprintf(stderr, "DelKey uid=0x%" PRIu64 " access_id=%" PRIu64 "\n", k.uid, k.access_id);
         delete_key(fd, &k);
         break;
@@ -484,10 +496,10 @@ void* hello_t(void* arg) {
 
     int size = 4 /* uint32_t id */ + sizeof(uuid_t) + sizeof(struct sockaddr_in6);
 
-    memcpy(buf, &(uint16_t){ htons(0) }, 2);
-    memcpy(buf+2, &(uint16_t){ htons(size) }, 2);
+    *((uint16_t*)buf) = htons(Hello);
+    *((uint16_t*)buf+1) = htons(size);
     pthread_mutex_lock(&mcast_lock);
-    memcpy(buf+4, &mcast_cnt, 4);
+    *((uint32_t*)buf+1) = htonl(mcast_cnt);
     mcast_cnt++;
     pthread_mutex_unlock(&mcast_lock);
     memcpy(buf+8, uuid, 16);
@@ -550,6 +562,48 @@ void* server_t(void *arg) {
         p->fd = new_fd;
         pthread_create(&tid, NULL, client_fun_t, (void*) p);
     }
+}
+
+int check_access_row_cb(void* arg, int argc, char** argv, char** colName) {
+    *((int*)arg) = 1;
+    return SQLITE_OK;
+}
+
+/* Check access, perform action (buzzer?) and create the appropriate
+   event */
+int check_access(int fd, char* SN, size_t len) {
+    int granted = 0, ret;
+    char sql[1024] = {0};
+    char* errmsg;
+    snprintf(sql, 1024, "select * from keys inner join accesses on keys.access_id = accesses.id");
+
+    pthread_mutex_lock(&db_lock);
+    ret = sqlite3_exec(db, sql, check_access_row_cb, &granted, &errmsg);
+    if (ret != SQLITE_OK) {
+        fprintf(stderr, "%s\n", errmsg);
+        sqlite3_free(errmsg);
+    }
+    pthread_mutex_unlock(&db_lock);
+
+    /* Now send an event according to the value of granted (either
+       unknown key or access granted) */
+
+    *((uint16_t*)sql+1) = htons(20 + len);
+    /* *((uint32_t*)sql+1) = */
+    if (granted) {
+        *((uint16_t*)sql) = htons(AccessGranted);
+    }
+
+    else {
+        *((uint16_t*)sql) = htons(UnknownKey);
+    }
+
+    // Send an EOT message to signal the end of transmission
+    *((uint16_t *)sql) = htons(CmdEOT);
+    *((uint16_t *)sql+1) = htons(0);
+    ret = send(fd, sql, 4, 0);
+
+    return ret;
 }
 
 /* Loop reading RFIDs and wake up listeners when reading is
