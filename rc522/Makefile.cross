@@ -1,16 +1,17 @@
+# PATH=$PATH:$HOME/code/openwrt/staging_dir/toolchain-mips_34kc_gcc-4.8-linaro_musl-1.1.10/bin
+# STAGING_DIR=$HOME/code/openwrt/staging_dir/toolchain-mips_34kc_gcc-4.8-linaro_musl-1.1.10
+
 CC=mips-openwrt-linux-musl-gcc
 LD=mips-openwrt-linux-musl-ld
 TARGET_DIR=/home/vb/code/openwrt/staging_dir/target-mips_34kc_musl-1.1.10
 
 CFLAGS=-std=gnu11 -g -ggdb -D_GNU_SOURCE -Wall -Wno-unused-variable -Wno-unused-but-set-variable `pkg-config --cflags uuid` -I$(TARGET_DIR)/include -I$(TARGET_DIR)/usr/include
 LDFLAGS=-pthread `pkg-config --libs uuid` `pkg-config --libs sqlite3` -L$(TARGET_DIR)/lib -L$(TARGET_DIR)/usr/lib
-PROGS=main valet-rfidd i2c-test
+PROGS=main i2c-test
 
 all: $(PROGS)
 
-main: config.o rc522.o rfid.o
-
-valet-rfidd: rc522.o rfid.o
+main: config.o rc522.o rfid.o base64.o
 
 .PHONY: clean
 

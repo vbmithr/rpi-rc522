@@ -1,5 +1,8 @@
 #include <stdlib.h>
 #include <stdio.h>
+#include <stdint.h>
+#define __STDC_FORMAT_MACROS
+#include <inttypes.h>
 #include <string.h>
 #include <unistd.h>
 #include <sys/types.h>
@@ -290,7 +293,7 @@ int add_key(int fd, struct key* k) {
         exit(EXIT_FAILURE);
     }
 
-    snprintf(sql, 1024, "insert or replace into keys values (%ld, %ld, '%s', '%s')",
+    snprintf(sql, 1024, "insert or replace into keys values (%" PRIu64 ", %" PRIu64 ", '%s', '%s')",
              k->uid, k->access_id, key, secret);
 
     pthread_mutex_lock(&db_lock);
@@ -319,7 +322,7 @@ int delete_key(int fd, struct key* k) {
     char *errmsg;
     int ret;
 
-    snprintf(sql, 1024, "delete from keys where uid = %ld and access_id = %ld",
+    snprintf(sql, 1024, "delete from keys where uid = %" PRIu64 " and access_id = %" PRIu64,
              k->uid, k->access_id);
 
     pthread_mutex_lock(&db_lock);
@@ -390,13 +393,13 @@ void* client_fun_t(void* arg) {
     case AddKey:
         ret = read(fd, &k, size);
         fprintf(stderr, "Read %d bytes.\n", ret);
-        fprintf(stderr, "AddKey uid=0x%lx access_id=%ld\n", k.uid, k.access_id);
+        fprintf(stderr, "AddKey uid=0x%" PRIu64 " access_id=%" PRIu64 "\n", k.uid, k.access_id);
         add_key(fd, &k);
         break;
     case DelKey:
         ret = read(fd, &k, size);
         fprintf(stderr, "Read %d bytes.\n", ret);
-        fprintf(stderr, "DelKey uid=0x%lx access_id=%ld\n", k.uid, k.access_id);
+        fprintf(stderr, "DelKey uid=0x%" PRIu64 " access_id=%" PRIu64 "\n", k.uid, k.access_id);
         delete_key(fd, &k);
         break;
     }
@@ -559,8 +562,7 @@ void* rfid_t(void *arg) {
     int i2caddr = *((int*)(arg));
     char status;
 
-    char *p;
-    char sn_str[23];
+    char sn_str[23] = {0};
 
     int fd = InitRc522 ("/dev/i2c-0", i2caddr);
 
@@ -581,24 +583,15 @@ void* rfid_t(void *arg) {
         if (select_tag_sn (fd, SN, &SN_len) != TAG_OK)
             continue;
 
-        p = sn_str;
-        *(p++) = '[';
-
         for (int i = 0; i < SN_len; i++) {
-            sprintf (p, "%02x", SN[i]);
-            p += 2;
+            sprintf (sn_str + 2*i, "%02x", SN[i]);
         }
 
         //for debugging
         if (debug) {
-            *p = 0;
-            fprintf (stderr, "Type: %04x, Serial: %s\n", CType, &sn_str[1]);
+            fprintf (stderr, "Type: %04x, Serial: %s\n", CType, sn_str);
+            fprintf (stderr, "New tag: type=%04x SNlen=%d SN=[%s]\n", CType, SN_len, sn_str);
         }
-        *(p++) = ']';
-        *(p++) = 0;
-
-        if (debug)
-            fprintf (stderr, "New tag: type=%04x SNlen=%d SN=%s\n", CType, SN_len, sn_str);
     }
 }
 
@@ -644,5 +637,5 @@ int main (int argc, char *argv[]) {
     pthread_join(srv_id, &th_ret);
 
     /* Exit in presence of threads. */
-    return NULL;
+    return 0;
 }
