@@ -489,14 +489,15 @@ void* hello_t(void* arg) {
 
     *((uint16_t*)buf) = htons(Hello);
     *((uint16_t*)buf+1) = htons(size);
-    pthread_mutex_lock(&mcast_lock);
-    *((uint32_t*)buf+1) = htonl(mcast_cnt);
-    mcast_cnt++;
-    pthread_mutex_unlock(&mcast_lock);
     memcpy(buf+8, uuid, 16);
     memcpy(buf+24, &mysaddr, sizeof(struct sockaddr_in6));
 
     while (1) {
+        pthread_mutex_lock(&mcast_lock);
+        *((uint32_t*)buf+1) = htonl(mcast_cnt);
+        mcast_cnt++;
+        pthread_mutex_unlock(&mcast_lock);
+
         ret = sendto(mcast_fd, buf, size+4, MSG_EOR,
                      (const struct sockaddr*) &mcast_saddr,
                      sizeof(struct sockaddr_in6));
