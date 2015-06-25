@@ -557,6 +557,19 @@ void* server_t(void *arg) {
 
 int granted;
 
+void* beep_t(void *arg) {
+    int fd = open("/sys/class/gpio/gpio15/value", O_WRONLY);
+    if (fd == -1) return NULL;
+
+    write(fd, "1", 1);
+    if (granted) usleep(200000);
+    else usleep(1000000);
+    write(fd, "0", 1);
+
+    close(fd);
+    return NULL;
+}
+
 int check_access_row_cb(void* arg, int argc, char** argv, char** colName) {
     uint64_t uid_db = atoll(argv[0]), uid_to_check = be64toh(*((uint64_t*)arg));
 
@@ -585,6 +598,10 @@ int check_access(uint8_t* SN, size_t len) {
         sqlite3_free(errmsg);
     }
     pthread_mutex_unlock(&db_lock);
+
+    pthread_t beep;
+    /* Beep accordingly. */
+    pthread_create(&beep, NULL, beep_t, NULL);
 
     /* Now send an event according to the value of granted (either
        unknown key or access granted) */
