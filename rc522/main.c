@@ -695,35 +695,39 @@ int main (int argc, char *argv[]) {
     fd = open("/sys/class/gpio/export", O_WRONLY);
     if (fd == -1) {
         perror("open");
-        exit(EXIT_FAILURE);
     }
-    write(fd, "21", 2); /* RSTPWD */
-    write(fd, "15", 2); /* Buzzer */
-    close(fd);
+    else {
+        write(fd, "21", 2); /* RSTPWD */
+        write(fd, "15", 2); /* Buzzer */
+        close(fd);
+    }
 
     fd = open("/sys/class/gpio/gpio21/direction", O_WRONLY);
     if (fd == -1) {
         perror("open");
-        exit(EXIT_FAILURE);
     }
-    write(fd, "out", 3);
-    close(fd);
+    else {
+        write(fd, "out", 3);
+        close(fd);
+    }
 
     fd = open("/sys/class/gpio/gpio15/direction", O_WRONLY);
     if (fd == -1) {
         perror("open");
-        exit(EXIT_FAILURE);
     }
-    write(fd, "out", 3);
-    close(fd);
+    else {
+        write(fd, "out", 3);
+        close(fd);
+    }
 
     fd = open("/sys/class/gpio/gpio21/value", O_WRONLY);
     if (fd == -1) {
         perror("open");
-        exit(EXIT_FAILURE);
     }
-    write(fd, "1", 1);
-    close(fd);
+    else {
+        write(fd, "1", 1);
+        close(fd);
+    }
 
     /* Open DB for everyone */
     ret = sqlite3_open(".accesses.db", &db);
