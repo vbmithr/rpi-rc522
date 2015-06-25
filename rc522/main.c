@@ -6,6 +6,8 @@
 #include <string.h>
 #include <unistd.h>
 #include <sys/types.h>
+#include <sys/stat.h>
+#include <fcntl.h>
 #include <sys/socket.h>
 #include <netinet/in.h>
 #include <arpa/inet.h>
@@ -553,21 +555,31 @@ void* server_t(void *arg) {
     }
 }
 
+int granted;
+
 int check_access_row_cb(void* arg, int argc, char** argv, char** colName) {
-    *((int*)arg) = 1;
+    uint64_t uid_db = atoll(argv[0]), uid_to_check = be64toh(*((uint64_t*)arg));
+
+    if (uid_db == uid_to_check) granted = 1;
+
     return SQLITE_OK;
 }
 
 /* Check access, perform action (buzzer?) and create the appropriate
    event */
 int check_access(uint8_t* SN, size_t len) {
-    int granted = 0, ret;
+    uint8_t uid[8] = {0};
+    if (len == 4) memcpy(uid+4, SN, len);
+    if (len == 7) memcpy(uid+1, SN, len);
+    int ret;
     char sql[1024] = {0};
     char* errmsg;
     snprintf(sql, 1024, "select * from keys inner join accesses on keys.access_id = accesses.id");
 
+    granted = 0;
+
     pthread_mutex_lock(&db_lock);
-    ret = sqlite3_exec(db, sql, check_access_row_cb, &granted, &errmsg);
+    ret = sqlite3_exec(db, sql, check_access_row_cb, uid, &errmsg);
     if (ret != SQLITE_OK) {
         fprintf(stderr, "%s\n", errmsg);
         sqlite3_free(errmsg);
@@ -678,12 +690,47 @@ int main (int argc, char *argv[]) {
         }
     }
 
+    /* Setup GPIOs */
+    int fd;
+    fd = open("/sys/class/gpio/export", O_WRONLY);
+    if (fd == -1) {
+        perror("open");
+        exit(EXIT_FAILURE);
+    }
+    write(fd, "21", 2); /* RSTPWD */
+    write(fd, "15", 2); /* Buzzer */
+    close(fd);
+
+    fd = open("/sys/class/gpio/gpio21/direction", O_WRONLY);
+    if (fd == -1) {
+        perror("open");
+        exit(EXIT_FAILURE);
+    }
+    write(fd, "out", 3);
+    close(fd);
+
+    fd = open("/sys/class/gpio/gpio15/direction", O_WRONLY);
+    if (fd == -1) {
+        perror("open");
+        exit(EXIT_FAILURE);
+    }
+    write(fd, "out", 3);
+    close(fd);
+
+    fd = open("/sys/class/gpio/gpio21/value", O_WRONLY);
+    if (fd == -1) {
+        perror("open");
+        exit(EXIT_FAILURE);
+    }
+    write(fd, "1", 1);
+    close(fd);
+
     /* Open DB for everyone */
     ret = sqlite3_open(".accesses.db", &db);
     if (ret) {
         fprintf(stderr, "Can't open database: %s\n", sqlite3_errmsg(db));
         sqlite3_close(db);
-        return EXIT_FAILURE;
+        exit(EXIT_FAILURE);
     }
 
     pthread_t srv_id, rfid_id, hello_id;
