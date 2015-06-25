@@ -1,3 +1,2 @@
-Build with:
-
-`make CC=mips-openwrt-linux-musl-gcc LD=mips-openwrt-linux-musl-ld`
+source sourceme.cross
+make -f Makefile.cross
