@@ -77,13 +77,13 @@ enum result {
 };
 
 struct access {
-    uint32_t id;
+    uuid_t uuid;
     char descr[128];
     uint8_t cond[128];
 };
 
 struct key {
-    uint64_t access_id;
+    uuid_t access;
     uint64_t uid; // max 7 bytes
     uint8_t key[12]; // two classic keys
     uint8_t secret[48]; // max size of secret
@@ -102,41 +102,51 @@ int key_row_cb(void* arg, int argc, char** argv, char** colName) {
     uint8_t b64decode[1024];
     size_t dlen = 1024;
     int ret;
+    uuid_t uuid;
+
+    ret = uuid_parse(argv[1], uuid);
+    if (ret == -1) {
+        fprintf(stderr, "Corrupted UUID\n");
+        return SQLITE_OK;
+    }
 
     // buf+0 = CmdOk
-    *((uint16_t *)buf+1) = htons(76);
+    *((uint16_t *)buf+1) = htons(16+8+12+48);
 
-    *((uint64_t *)&buf[4]) = htobe64(atoi(argv[1])); // access_id, cf SQL schema
-    *((uint64_t *)&buf[12]) = htobe64(atoll(argv[0]));
-
-    ret = base64_decode(b64decode, &dlen, (unsigned char*) argv[2], strlen(argv[2]));
-    if (ret != 0) {
-        fprintf(stderr, "base64_decode error, exiting.\n");
-        exit(EXIT_FAILURE);
-    }
-    memcpy(buf+20, b64decode, dlen);
+    memcpy(buf+4, uuid, 16);
+    *((uint64_t *)&buf[4+16]) = htobe64(atoll(argv[0]));
 
     ret = base64_decode(b64decode, &dlen, (unsigned char*) argv[2], strlen(argv[2]));
     if (ret != 0) {
         fprintf(stderr, "base64_decode error, exiting.\n");
         exit(EXIT_FAILURE);
     }
-    memcpy(buf+20+12, b64decode, dlen);
+    memcpy(buf+4+16+8, b64decode, dlen);
 
-    ret = send(fd, buf, 4+16+12+48, 0);
+    ret = base64_decode(b64decode, &dlen, (unsigned char*) argv[2], strlen(argv[2]));
+    if (ret != 0) {
+        fprintf(stderr, "base64_decode error, exiting.\n");
+        exit(EXIT_FAILURE);
+    }
+    memcpy(buf+4+16+8+12, b64decode, dlen);
+
+    ret = send(fd, buf, 4+16+8+12+48, 0);
     if (ret == -1)
         perror("send");
 
-    if (ret == 4+16+12+48) return SQLITE_OK;
+    if (ret == 4+16+8+12+48) return SQLITE_OK;
     else return ret;
 }
 
-int list_keys(int fd, int access_id) {
+int list_keys(int fd, uuid_t uuid) {
     char sql[1024];
     char *errmsg;
     int ret;
+    char uuid_str[37];
 
-    snprintf(sql, 1024, "select * from keys where access_id is %d", access_id);
+    uuid_unparse(uuid, uuid_str);
+
+    snprintf(sql, 1024, "select * from keys where access is '%s'", uuid_str);
 
     pthread_mutex_lock(&db_lock);
     ret = sqlite3_exec(db, sql, key_row_cb, &fd, &errmsg);
@@ -160,6 +170,16 @@ int access_row_cb(void* arg, int argc, char** argv, char** colName) {
     uint8_t b64decode[1024];
     size_t dlen = 1024;
     int ret;
+    uuid_t uuid;
+
+    // Debug
+    fprintf(stderr, "get %s, %s, %s\n", argv[0], argv[1], argv[2]);
+
+    ret = uuid_parse(argv[0], uuid);
+    if (ret == -1) {
+        fprintf(stderr, "Corrupted UUID\n");
+        return SQLITE_OK;
+    }
 
     if (argv[2] == NULL) {
         fprintf(stderr, "Corrupted record %d\n", argc);
@@ -167,24 +187,23 @@ int access_row_cb(void* arg, int argc, char** argv, char** colName) {
     }
 
     // buf+0 = CmdOk
-    *((uint16_t *)buf+1) = htons(260);
-    *((uint32_t *)buf+1) = htonl(atoi(argv[0]));
+    *((uint16_t *)buf+1) = htons(16+128+128);
+    memcpy(buf+4, uuid, 16);
 
-    strncpy(buf+8, argv[1], 128);
-    fprintf(stderr, "get %s, %s\n", argv[1], argv[2]);
+    strncpy(buf+4+16, argv[1], 128);
 
     ret = base64_decode(b64decode, &dlen, (unsigned char*) argv[2], strlen(argv[2]));
     if (ret != 0) {
         fprintf(stderr, "base64_decode error, exiting.\n");
         exit(EXIT_FAILURE);
     }
-    memcpy(buf+8+128, b64decode, dlen);
+    memcpy(buf+4+16+128, b64decode, dlen);
 
-    ret = send(fd, buf, 4+4+128+128, 0);
+    ret = send(fd, buf, 4+16+128+128, 0);
     if (ret == -1)
         perror("send");
 
-    if (ret == 256+8) return SQLITE_OK;
+    if (ret == 4+16+128+128) return SQLITE_OK;
     else return ret;
 }
 
@@ -204,10 +223,9 @@ int list_accesses(int fd) {
     pthread_mutex_unlock(&db_lock);
 
     // Send an EOT message to signal the end of transmission
-    char buf[4];
-    *((uint16_t *)buf) = htons(CmdEOT);
-    *((uint16_t *)buf+1) = htons(0);
-    ret = send(fd, buf, 4, 0);
+    *((uint16_t *)sql) = htons(CmdEOT);
+    *((uint16_t *)sql+1) = htons(0);
+    ret = send(fd, sql, 4, 0);
 
     return ret;
 }
@@ -218,6 +236,11 @@ int add_access(int fd, struct access* a) {
     size_t dlen = 1024;
     char *errmsg;
     int ret;
+    uuid_t uuid;
+    char uuid_str[37];
+
+    uuid_generate(uuid);
+    uuid_unparse(uuid, uuid_str);
 
     ret = base64_encode(b64cond, &dlen, a->cond, 128);
     if (ret != 0) {
@@ -229,8 +252,8 @@ int add_access(int fd, struct access* a) {
         exit(EXIT_FAILURE);
     }
 
-    snprintf(sql, 1024, "insert or replace into accesses (descr,cond) values ('%s','%s')",
-             a->descr, b64cond);
+    snprintf(sql, 1024, "insert or replace into accesses values ('%s','%s','%s')",
+             uuid_str, a->descr, b64cond);
     fprintf(stderr, "%s\n", sql);
 
     pthread_mutex_lock(&db_lock);
@@ -247,19 +270,22 @@ int add_access(int fd, struct access* a) {
     else
         *((uint16_t *)sql) = htons(CmdNOK);
 
-    *((uint16_t *)sql+1) = htons(4);
-    *((uint32_t *)sql+1) = htonl(sqlite3_last_insert_rowid(db));
-    send(fd, sql, 4+4, 0);
+    *((uint16_t *)sql+1) = htons(16);
+    memcpy(sql+4, uuid, 16);
+    send(fd, sql, 4+16, 0);
 
     return ret;
 }
 
-int delete_access(int fd, int id) {
+int delete_access(int fd, uuid_t uuid) {
     char sql[1024];
     char *errmsg;
     int ret;
+    char uuid_str[37];
 
-    snprintf(sql, 1024, "delete from accesses where id is %d", id);
+    uuid_unparse(uuid, uuid_str);
+
+    snprintf(sql, 1024, "delete from accesses where uuid is '%s'", uuid_str);
 
     pthread_mutex_lock(&db_lock);
     ret = sqlite3_exec(db, sql, NULL, NULL, &errmsg);
@@ -285,6 +311,7 @@ int add_key(int fd, struct key* k) {
     char sql[1024];
     uint8_t key[1024] = {0};
     uint8_t secret[1024] = {0};
+    char uuid_str[37];
     size_t dlen = 1024;
 
     char *errmsg;
@@ -313,8 +340,10 @@ int add_key(int fd, struct key* k) {
         exit(EXIT_FAILURE);
     }
 
-    snprintf(sql, 1024, "insert or replace into keys values (%" PRIu64 ", %" PRIu64 ", '%s', '%s')",
-             k->uid, k->access_id, key, secret);
+    uuid_unparse(k->access, uuid_str);
+
+    snprintf(sql, 1024, "insert or replace into keys values (%" PRIu64 ", '%s', '%s', '%s')",
+             k->uid, uuid_str, key, secret);
 
     pthread_mutex_lock(&db_lock);
     ret = sqlite3_exec(db, sql, NULL, NULL, &errmsg);
@@ -338,12 +367,15 @@ int add_key(int fd, struct key* k) {
 
 int delete_key(int fd, struct key* k) {
     char sql[1024];
+    char uuid_str[37];
 
     char *errmsg;
     int ret;
 
-    snprintf(sql, 1024, "delete from keys where uid = %" PRIu64 " and access_id = %" PRIu64,
-             k->uid, k->access_id);
+    uuid_unparse(k->access, uuid_str);
+
+    snprintf(sql, 1024, "delete from keys where uid = %" PRIu64 " and access = '%s'",
+             k->uid, uuid_str);
 
     pthread_mutex_lock(&db_lock);
     ret = sqlite3_exec(db, sql, NULL, NULL, &errmsg);
@@ -385,7 +417,8 @@ void* client_fun_t(void* arg) {
 
     struct access a = {0};
     struct key k = {0};
-    uint32_t id;
+    uuid_t uuid;
+    char uuid_str[37];
 
     switch (msg) {
     case ListAccess:
@@ -399,31 +432,32 @@ void* client_fun_t(void* arg) {
         ret = add_access(fd, &a);
         break;
     case DelAccess:
-        read(fd, &id, size);
+        read(fd, uuid, size);
+        uuid_unparse(uuid, uuid_str);
         fprintf(stderr, "Read %d bytes.\n", ret);
-        fprintf(stderr, "DelAccess %d\n", ntohl(id));
-        delete_access(fd, ntohl(id));
+        fprintf(stderr, "DelAccess %s\n", uuid_str);
+        delete_access(fd, uuid);
         break;
     case ListKeys:
-        ret = read(fd, &id, size);
+        ret = read(fd, uuid, size);
         fprintf(stderr, "Read %d bytes.\n", ret);
-        fprintf(stderr, "ListKeys %d\n", ntohl(id));
-        list_keys(fd, ntohl(id));
+        fprintf(stderr, "ListKeys %s\n", uuid_str);
+        list_keys(fd, uuid);
         break;
     case AddKey:
         ret = read(fd, &k, size);
         fprintf(stderr, "Read %d bytes.\n", ret);
-        k.access_id = be64toh(k.access_id);
         k.uid = be64toh(k.uid);
-        fprintf(stderr, "AddKey uid=0x%" PRIu64 " access_id=%" PRIu64 "\n", k.uid, k.access_id);
+        uuid_unparse(k.access, buf);
+        fprintf(stderr, "AddKey uid=0x%" PRIx64 " access_id=%s\n", k.uid, buf);
         add_key(fd, &k);
         break;
     case DelKey:
         ret = read(fd, &k, size);
         fprintf(stderr, "Read %d bytes.\n", ret);
-        k.access_id = be64toh(k.access_id);
         k.uid = be64toh(k.uid);
-        fprintf(stderr, "DelKey uid=0x%" PRIu64 " access_id=%" PRIu64 "\n", k.uid, k.access_id);
+        uuid_unparse(k.access, buf);
+        fprintf(stderr, "DelKey uid=0x%" PRIx64 " access_id=%s\n", k.uid, buf);
         delete_key(fd, &k);
         break;
     }
