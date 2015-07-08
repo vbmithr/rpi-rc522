@@ -236,11 +236,7 @@ int add_access(int fd, struct access* a) {
     size_t dlen = 1024;
     char *errmsg;
     int ret;
-    uuid_t uuid;
     char uuid_str[37];
-
-    uuid_generate(uuid);
-    uuid_unparse(uuid, uuid_str);
 
     ret = base64_encode(b64cond, &dlen, a->cond, 128);
     if (ret != 0) {
@@ -251,6 +247,8 @@ int add_access(int fd, struct access* a) {
         }
         exit(EXIT_FAILURE);
     }
+
+    uuid_unparse(a->uuid, uuid_str);
 
     snprintf(sql, 1024, "insert or replace into accesses values ('%s','%s','%s')",
              uuid_str, a->descr, b64cond);
@@ -415,8 +413,8 @@ void* client_fun_t(void* arg) {
     size = ntohs(*(p+1));
     fprintf(stderr, "Read new message kind %d, size %d\n", msg, size);
 
-    struct access a = {0};
-    struct key k = {0};
+    struct access a;
+    struct key k;
     uuid_t uuid;
     char uuid_str[37];
 
@@ -494,11 +492,15 @@ int find_ip(struct sockaddr_in6 *addr) {
         /*     fprintf(stderr, "%s\n", buf); */
         /* } */
 
+
+        char ipv6[INET6_ADDRSTRLEN];
+        struct in6_addr cur_addr = ((struct sockaddr_in6*)ifa->ifa_addr)->sin6_addr;
         if (family == AF_INET6
-            && !IN6_IS_ADDR_LOOPBACK(&(((struct sockaddr_in6*)ifa->ifa_addr)->sin6_addr))
-            && !IN6_IS_ADDR_LINKLOCAL(&(((struct sockaddr_in6*)ifa->ifa_addr)->sin6_addr))
+            && !IN6_IS_ADDR_LOOPBACK(&cur_addr) && !IN6_IS_ADDR_LINKLOCAL(&cur_addr)
             )
             {
+                fprintf(stderr, "Using IPv6 %s\n",
+                        inet_ntop(AF_INET6, &cur_addr, ipv6, INET6_ADDRSTRLEN));
                 memcpy(addr, ifa->ifa_addr, sizeof(struct sockaddr_in6));
                 return 0;
             }
