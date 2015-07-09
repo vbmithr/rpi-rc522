@@ -26,7 +26,6 @@
 
 int mcast_period = 1; /* cmdline configurable */
 int backlog = 10;
-uuid_t uuid; /* setup by main */
 int debug = 0;
 
 /* CONFIG: Addresses and ports */
@@ -269,7 +268,7 @@ int add_access(int fd, struct access* a) {
         *((uint16_t *)sql) = htons(CmdNOK);
 
     *((uint16_t *)sql+1) = htons(16);
-    memcpy(sql+4, uuid, 16);
+    memcpy(sql+4, reader_uuid, 16);
     send(fd, sql, 4+16, 0);
 
     return ret;
@@ -527,7 +526,7 @@ void* hello_t(void* arg) {
 
     *((uint16_t*)buf) = htons(Hello);
     *((uint16_t*)buf+1) = htons(size);
-    memcpy(buf+8, uuid, 16);
+    memcpy(buf+8, reader_uuid, 16);
     memcpy(buf+24, &mysaddr, sizeof(struct sockaddr_in6));
 
     while (1) {
@@ -623,7 +622,7 @@ int check_access(uint8_t* SN, size_t len) {
     int ret;
     char sql[1024] = {0};
     char* errmsg;
-    snprintf(sql, 1024, "select * from keys inner join accesses on keys.access_id = accesses.id");
+    snprintf(sql, 1024, "select * from keys inner join accesses on keys.access = accesses.uuid");
 
     granted = 0;
 
@@ -650,7 +649,7 @@ int check_access(uint8_t* SN, size_t len) {
     *((uint32_t*)sql+1) = htonl(mcast_cnt);
     mcast_cnt++;
     pthread_mutex_unlock(&mcast_lock);
-    memcpy(sql+8, uuid, 16);
+    memcpy(sql+8, reader_uuid, 16);
     memcpy(sql+24, SN, len);
 
     ret = sendto(mcast_fd, sql, 24+len, MSG_EOR,
@@ -710,8 +709,7 @@ void* rfid_t(void *arg) {
 int main (int argc, char *argv[]) {
     int ret;
 
-    /* Generate random uuid */
-    uuid_generate(uuid);
+    fprintf(stderr, "Using uuid %s\n", reader_uuid);
 
     /* Setup mcast socket  */
     mcast_saddr.sin6_family = AF_INET6;
