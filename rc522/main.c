@@ -23,13 +23,16 @@
 #include "config.h"
 
 const char* reader_uuid_str = "54c750dc-0ccd-4c03-90d0-c47b26d567b6";
+/* const char* db_path = "/home/vb/code/rpi-rc522/rc522/.accesses.db"; */
+const char* db_path = "/root/.accesses.db";
 uuid_t reader_uuid;
 
 /* CONFIG: Misc */
 
 int mcast_period = 1; /* cmdline configurable */
 int backlog = 10;
-int debug = 0;
+int verbose = 0;
+int daemonize = 0;
 
 /* CONFIG: Addresses and ports */
 
@@ -695,7 +698,7 @@ void* rfid_t(void *arg) {
         // At this point we successfully read a uid
         ret = check_access(SN, SN_len);
 
-        if (debug) {
+        if (verbose) {
             for (int i = 0; i < SN_len; i++) {
                 sprintf (sn_str + 2*i, "%02x", SN[i]);
             }
@@ -711,6 +714,32 @@ void* rfid_t(void *arg) {
 
 int main (int argc, char *argv[]) {
     int ret;
+
+        /* Parse cmdline arguments */
+    while ((ret = getopt (argc, argv, "dpi:")) != -1) {
+        switch (ret) {
+        case 'v':
+            verbose = 1;
+            break;
+        case 'p':
+            mcast_period = atoi(optarg);
+            break;
+        case 'i':
+            i2caddr = atoi(optarg);
+            break;
+        case 'd':
+            daemonize = 1;
+            break;
+        }
+    }
+
+    if (daemonize) {
+        if ((ret = daemon(0, 0)) == -1) {
+            perror("daemon");
+            exit(EXIT_FAILURE);
+        }
+    }
+
     uuid_parse(reader_uuid_str, reader_uuid);
     fprintf(stderr, "Using uuid %s\n", reader_uuid_str);
 
@@ -729,20 +758,6 @@ int main (int argc, char *argv[]) {
         exit(EXIT_FAILURE);
     }
 
-    /* Parse cmdline arguments */
-    while ((ret = getopt (argc, argv, "dpi:")) != -1) {
-        switch (ret) {
-        case 'd':
-            debug = 1;
-            break;
-        case 'p':
-            mcast_period = atoi(optarg);
-            break;
-        case 'i':
-            i2caddr = atoi(optarg);
-            break;
-        }
-    }
 
     /* Setup GPIOs */
     int fd;
@@ -784,7 +799,10 @@ int main (int argc, char *argv[]) {
     }
 
     /* Open DB for everyone */
-    ret = sqlite3_open(".accesses.db", &db);
+    if (access(".accesses.db", F_OK) != -1)
+        ret = sqlite3_open(".accesses.db", &db);
+    else
+        ret = sqlite3_open(db_path, &db);
     if (ret) {
         fprintf(stderr, "Can't open database: %s\n", sqlite3_errmsg(db));
         sqlite3_close(db);
@@ -805,6 +823,5 @@ int main (int argc, char *argv[]) {
     void* th_ret;
     pthread_join(srv_id, &th_ret);
 
-    /* Exit in presence of threads. */
     return 0;
 }
