@@ -23,8 +23,6 @@
 #include "config.h"
 
 const char* reader_uuid_str = "54c750dc-0ccd-4c03-90d0-c47b26d567b6";
-/* const char* db_path = "/home/vb/code/rpi-rc522/rc522/.accesses.db"; */
-const char* db_path = "/root/.accesses.db";
 uuid_t reader_uuid;
 
 /* CONFIG: Misc */
@@ -714,9 +712,12 @@ void* rfid_t(void *arg) {
 
 int main (int argc, char *argv[]) {
     int ret;
+    char db_path[256];
+
+    strncpy(db_path, ".accesses.db", 256);
 
         /* Parse cmdline arguments */
-    while ((ret = getopt (argc, argv, "dpi:")) != -1) {
+    while ((ret = getopt (argc, argv, "vp:i:dc:")) != -1) {
         switch (ret) {
         case 'v':
             verbose = 1;
@@ -729,6 +730,9 @@ int main (int argc, char *argv[]) {
             break;
         case 'd':
             daemonize = 1;
+            break;
+        case 'c':
+            strncpy(db_path, optarg, 256);
             break;
         }
     }
@@ -798,16 +802,14 @@ int main (int argc, char *argv[]) {
         close(fd);
     }
 
-    /* Open DB for everyone */
-    if (access(".accesses.db", F_OK) != -1)
-        ret = sqlite3_open(".accesses.db", &db);
-    else
-        ret = sqlite3_open(db_path, &db);
+    ret = sqlite3_open(db_path, &db);
     if (ret) {
         fprintf(stderr, "Can't open database: %s\n", sqlite3_errmsg(db));
         sqlite3_close(db);
         exit(EXIT_FAILURE);
     }
+
+    fprintf(stderr, "Using db file %s\n", db_path);
 
     pthread_t srv_id, rfid_id, hello_id;
     /* Launch the server. */
