@@ -19,7 +19,6 @@
 #include <signal.h>
 #include <ctype.h>
 
-const char* reader_uuid = "54c750dc-0ccd-4c03-90d0-c47b26d567b6";
 
 extern char config_file[255];
 void reload_config (int sugnum);

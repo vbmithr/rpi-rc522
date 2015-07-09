@@ -22,6 +22,8 @@
 #include "rfid.h"
 #include "config.h"
 
+const char* reader_uuid = "54c750dc-0ccd-4c03-90d0-c47b26d567b6";
+
 /* CONFIG: Misc */
 
 int mcast_period = 1; /* cmdline configurable */
