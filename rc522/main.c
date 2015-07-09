@@ -22,7 +22,8 @@
 #include "rfid.h"
 #include "config.h"
 
-const char* reader_uuid = "54c750dc-0ccd-4c03-90d0-c47b26d567b6";
+const char* reader_uuid_str = "54c750dc-0ccd-4c03-90d0-c47b26d567b6";
+uuid_t reader_uuid;
 
 /* CONFIG: Misc */
 
@@ -710,8 +711,8 @@ void* rfid_t(void *arg) {
 
 int main (int argc, char *argv[]) {
     int ret;
-
-    fprintf(stderr, "Using uuid %s\n", reader_uuid);
+    uuid_parse(reader_uuid_str, reader_uuid);
+    fprintf(stderr, "Using uuid %s\n", reader_uuid_str);
 
     /* Setup mcast socket  */
     mcast_saddr.sin6_family = AF_INET6;
