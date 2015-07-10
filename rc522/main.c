@@ -17,6 +17,8 @@
 #include <sqlite3.h>
 #include <pthread.h>
 #include <assert.h>
+#include <net/if.h>
+#include <getopt.h>
 
 #include "base64.h"
 #include "rfid.h"
@@ -24,6 +26,7 @@
 
 const char* reader_uuid_str = "54c750dc-0ccd-4c03-90d0-c47b26d567b6";
 uuid_t reader_uuid;
+char ifname[IF_NAMESIZE];
 
 /* CONFIG: Misc */
 
@@ -527,6 +530,8 @@ void* hello_t(void* arg) {
         }
     }
     mysaddr.sin6_port = htons(atoi(service));
+    if ((mysaddr.sin6_scope_id = if_nametoindex(ifname)) == 0)
+        perror("if_nametoindex");
 
     fprintf(stderr, "Using IPv6 %s\n",
             inet_ntop(AF_INET6, &mysaddr.sin6_addr, buf, INET6_ADDRSTRLEN));
@@ -725,9 +730,38 @@ int main (int argc, char *argv[]) {
 
     strncpy(db_path, ".accesses.db", 256);
 
-        /* Parse cmdline arguments */
-    while ((ret = getopt (argc, argv, "vp:i:dc:6:")) != -1) {
+    int option_index = 0;
+
+    struct option long_options[] = {
+        {"verbose", no_argument, 0, 0},
+        {"period", required_argument, 0, 0},
+        {"i2caddr", required_argument, 0, 0},
+        {"daemon", no_argument, 0, 0},
+        {"db", required_argument, 0, 0},
+        {"iface", required_argument, 0, 0},
+        {"v6addr", required_argument, 0, 0},
+        {0, 0, 0, 0}
+    };
+
+    /* Parse cmdline arguments */
+    while ((ret = getopt_long (argc, argv, "vd",
+                               long_options, &option_index)) != -1) {
         switch (ret) {
+        case 0:
+            switch (option_index) {
+            case 0: verbose = 1; break;
+            case 1: mcast_period = atoi(optarg); break;
+            case 2: i2caddr = atoi(optarg); break;
+            case 3: daemonize = 1; break;
+            case 4: strncpy(db_path, optarg, 256); break;
+            case 5: strncpy(ifname, optarg, IF_NAMESIZE); break;
+            case 6:
+                if ((ret = inet_pton(AF_INET6, optarg, &v6addr)) == -1) {
+                    perror("inet_ntop");
+                    exit(EXIT_FAILURE);
+                };
+                pv6addr = &v6addr;
+            }; break;
         case 'v':
             verbose = 1;
             break;
@@ -739,9 +773,6 @@ int main (int argc, char *argv[]) {
             break;
         case 'd':
             daemonize = 1;
-            break;
-        case 'c':
-            strncpy(db_path, optarg, 256);
             break;
         case '6':
             if ((ret = inet_pton(AF_INET6, optarg, &v6addr)) == -1) {
@@ -761,6 +792,7 @@ int main (int argc, char *argv[]) {
 
     uuid_parse(reader_uuid_str, reader_uuid);
     fprintf(stderr, "Using uuid %s\n", reader_uuid_str);
+    fprintf(stderr, "Using iface %s\n", ifname);
 
     /* Setup mcast socket  */
     mcast_saddr.sin6_family = AF_INET6;
