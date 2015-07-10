@@ -803,7 +803,15 @@ int main (int argc, char *argv[]) {
         perror("socket");
         exit(EXIT_FAILURE);
     }
-    ret = setsockopt(mcast_fd, IPPROTO_IPV6, IPV6_MULTICAST_LOOP, &(int){ 1 }, sizeof(int));
+    ret = setsockopt(mcast_fd, IPPROTO_IPV6,
+                     IPV6_MULTICAST_LOOP, &(int){ 1 }, sizeof(int));
+    if (ret == -1) {
+        perror("setsockopt");
+        exit(EXIT_FAILURE);
+    }
+
+    ret = setsockopt(mcast_fd, IPPROTO_IPV6,
+                     IPV6_MULTICAST_IF, &(int){ if_nametoindex(ifname) }, sizeof(int));
     if (ret == -1) {
         perror("setsockopt");
         exit(EXIT_FAILURE);
