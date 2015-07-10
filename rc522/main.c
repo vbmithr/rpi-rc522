@@ -502,8 +502,6 @@ int find_ip(struct sockaddr_in6 *addr) {
             && !IN6_IS_ADDR_LOOPBACK(&cur_addr) && !IN6_IS_ADDR_LINKLOCAL(&cur_addr)
             )
             {
-                fprintf(stderr, "Using IPv6 %s\n",
-                        inet_ntop(AF_INET6, &cur_addr, ipv6, INET6_ADDRSTRLEN));
                 memcpy(addr, ifa->ifa_addr, sizeof(struct sockaddr_in6));
                 return 0;
             }
@@ -519,12 +517,19 @@ void* hello_t(void* arg) {
     struct sockaddr_in6 mysaddr;
     char buf[1024] = {0};
 
-    ret = find_ip(&mysaddr);
-    if (ret != 0) {
-        fprintf(stderr, "hello_t is unable to get one valid IPv6 address.\n");
-        exit(EXIT_FAILURE);
+    if (arg != NULL)
+        memcpy(&mysaddr.sin6_addr, arg, sizeof(struct in6_addr));
+    else {
+        ret = find_ip(&mysaddr);
+        if (ret != 0) {
+            fprintf(stderr, "hello_t is unable to get one valid IPv6 address.\n");
+            exit(EXIT_FAILURE);
+        }
     }
     mysaddr.sin6_port = htons(atoi(service));
+
+    fprintf(stderr, "Using IPv6 %s\n",
+            inet_ntop(AF_INET6, &mysaddr.sin6_addr, buf, INET6_ADDRSTRLEN));
 
     int size = 4 /* uint32_t id */ + sizeof(uuid_t) + sizeof(struct sockaddr_in6);
 
@@ -659,6 +664,8 @@ int check_access(uint8_t* SN, size_t len) {
     ret = sendto(mcast_fd, sql, 24+len, MSG_EOR,
                  (const struct sockaddr*) &mcast_saddr,
                  sizeof(struct sockaddr_in6));
+    if (ret == -1)
+        perror("sendto");
 
     return granted;
 }
@@ -713,11 +720,13 @@ void* rfid_t(void *arg) {
 int main (int argc, char *argv[]) {
     int ret;
     char db_path[256];
+    struct in6_addr v6addr;
+    struct in6_addr *pv6addr = NULL;
 
     strncpy(db_path, ".accesses.db", 256);
 
         /* Parse cmdline arguments */
-    while ((ret = getopt (argc, argv, "vp:i:dc:")) != -1) {
+    while ((ret = getopt (argc, argv, "vp:i:dc:6:")) != -1) {
         switch (ret) {
         case 'v':
             verbose = 1;
@@ -734,6 +743,12 @@ int main (int argc, char *argv[]) {
         case 'c':
             strncpy(db_path, optarg, 256);
             break;
+        case '6':
+            if ((ret = inet_pton(AF_INET6, optarg, &v6addr)) == -1) {
+                perror("inet_ntop");
+                exit(EXIT_FAILURE);
+            };
+            pv6addr = &v6addr;
         }
     }
 
@@ -819,7 +834,7 @@ int main (int argc, char *argv[]) {
     pthread_create(&rfid_id, NULL, rfid_t, NULL);
 
     /* Launch mcast hello. */
-    pthread_create(&hello_id, NULL, hello_t, NULL);
+    pthread_create(&hello_id, NULL, hello_t, pv6addr);
 
     /* Wait for the server to finish */
     void* th_ret;
