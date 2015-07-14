@@ -866,6 +866,27 @@ int main (int argc, char *argv[]) {
 
     fprintf(stderr, "Using db file %s\n", db_path);
 
+    char *errmsg;
+    char sql[1024] = {0};
+
+    snprintf(sql, 1024, "create table if not exists accesses "
+             "(uuid blob primary key, descr text, cond blob)");
+
+    ret = sqlite3_exec(db, sql, NULL, NULL, &errmsg);
+    if (ret != SQLITE_OK) {
+        fprintf(stderr, "%s\n", errmsg);
+        sqlite3_free(errmsg);
+    }
+
+    snprintf(sql, 1024, "create table if not exists keys "
+             "(uid integer, access blob, privkey blob, secret blob)");
+
+    ret = sqlite3_exec(db, sql, NULL, NULL, &errmsg);
+    if (ret != SQLITE_OK) {
+        fprintf(stderr, "%s\n", errmsg);
+        sqlite3_free(errmsg);
+    }
+
     pthread_t srv_id, rfid_id, hello_id;
     /* Launch the server. */
     pthread_create(&srv_id, NULL, server_t, NULL);
